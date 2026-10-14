@@ -1,7 +1,7 @@
 import * as Y from 'yjs';
 import type { DocumentHandle } from './document.js';
 
-export interface SerializedRelativePosition { type: string; item: string | null; assoc: number }
+export interface SerializedRelativePosition { type: string; tname: string | null; item: string | null; assoc: number }
 export interface Anchor { start: SerializedRelativePosition; end: SerializedRelativePosition; quote: string }
 export type AnchorResolution =
   | { status: 'exact'; start: number; end: number; anchor: Anchor }
@@ -10,7 +10,7 @@ export type AnchorResolution =
 
 function encode(position: Y.RelativePosition): SerializedRelativePosition {
   const toString = (id: Y.ID | null): string => id ? `${id.client}:${id.clock}` : '';
-  return { type: toString(position.type), item: position.item ? toString(position.item) : null, assoc: position.assoc };
+  return { type: toString(position.type), tname: position.tname, item: position.item ? toString(position.item) : null, assoc: position.assoc };
 }
 function decode(position: SerializedRelativePosition): Y.RelativePosition {
   const parse = (value: string | null): Y.ID | null => {
@@ -19,7 +19,7 @@ function decode(position: SerializedRelativePosition): Y.RelativePosition {
     if (clientText === undefined || clockText === undefined) throw new Error('invalid relative position id');
     return { client: Number(clientText), clock: Number(clockText) };
   };
-  return new Y.RelativePosition(parse(position.type), null, parse(position.item), position.assoc);
+  return new Y.RelativePosition(parse(position.type), position.tname, parse(position.item), position.assoc);
 }
 export function serializePosition(position: Y.RelativePosition): SerializedRelativePosition { return encode(position); }
 export function createAnchor(document: DocumentHandle, start: number, end: number): Anchor {
