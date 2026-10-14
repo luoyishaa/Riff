@@ -1,0 +1,23 @@
+{
+  "principals": [
+    { "id": "alice", "kind": "human", "displayName": "Alice" },
+    { "id": "bob", "kind": "human", "displayName": "Bob" },
+    { "id": "carol", "kind": "human", "displayName": "Carol" },
+    { "id": "dan", "kind": "human", "displayName": "Dan" },
+    { "id": "polisher", "kind": "agent", "displayName": "Polisher", "ownerId": "alice" },
+    { "id": "reviewer", "kind": "agent", "displayName": "Reviewer", "ownerId": "alice" }
+  ],
+  "document": {
+    "id": "demo-doc",
+    "title": "协作写作演示文档",
+    "text": "这是一篇用于多人协作演示的中文说明文档。术语统一和上下文保持是协作写作中的重要目标。\n\n多人可以同时编辑这份文档，服务端保留单一 canonical 文本状态。"
+  },
+  "memberships": [
+    { "principalId": "alice", "role": "owner" },
+    { "principalId": "bob", "role": "editor" },
+    { "principalId": "carol", "role": "suggester" },
+    { "principalId": "dan", "role": "commenter" },
+    { "principalId": "polisher", "role": "editor" },
+    { "principalId": "reviewer", "role": "suggester" }
+  ]
+}
