@@ -1,0 +1,25 @@
+{
+  "name": "human-agent-docs",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": { "node": ">=20" },
+  "scripts": {
+    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "boundaries": "node scripts/check-boundaries.mjs",
+    "dev": "pnpm --filter @collab/server dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "eslint-import-resolver-typescript": "^3.7.0",
+    "eslint-plugin-import": "^2.31.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

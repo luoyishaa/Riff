@@ -1,0 +1,6 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": { "rootDir": "src", "outDir": "dist", "jsx": "react-jsx", "noEmit": false },
+  "references": [{ "path": "../../packages/protocol" }],
+  "include": ["src/**/*.tsx", "src/**/*.ts"]
+}

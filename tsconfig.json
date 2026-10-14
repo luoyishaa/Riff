@@ -1,0 +1,11 @@
+{
+  "files": [],
+  "references": [
+    { "path": "packages/kernel" },
+    { "path": "packages/protocol" },
+    { "path": "packages/review" },
+    { "path": "packages/agent" },
+    { "path": "apps/server" },
+    { "path": "apps/web" }
+  ]
+}

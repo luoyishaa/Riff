@@ -1,0 +1,10 @@
+node_modules/
+dist/
+.env
+*.db
+*.db-*
+coverage/
+paper-pal/
+*.tsbuildinfo
+*.docx
+毕设*.txt
