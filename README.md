@@ -5,9 +5,9 @@
 ## 启动
 
 ```powershell
-pnpm install
-pnpm --filter @collab/server dev
-pnpm --filter @collab/web dev
+corepack pnpm install
+corepack pnpm --filter @collab/server dev
+corepack pnpm --filter @collab/web dev
 ```
 
 默认服务端地址为 `http://127.0.0.1:8787`，前端地址为 `http://127.0.0.1:5173`。开发前端会把 `/api` 和 `/ws` 代理到 8787；换端口时同时设置 `$env:PORT` 与 `$env:COLLAB_SERVER_PORT`。
@@ -15,15 +15,15 @@ pnpm --filter @collab/web dev
 种子用户和文档来自根目录的 `seed.config.json`。测试与检查：
 
 ```powershell
-pnpm check
-pnpm --filter @collab/web build
+corepack pnpm check
+corepack pnpm --filter @collab/web build
 ```
 
 M6 评测脚本不依赖正在运行的服务：
 
 ```powershell
-pnpm eval:contexts eval/taskset.json --out eval/context-results.csv
-pnpm eval:concurrency --clients 4 --steps 200 --seed 42 --out eval/concurrency-results.json
+corepack pnpm eval:contexts eval/taskset.json --out eval/context-results.csv
+corepack pnpm eval:concurrency --clients 4 --steps 200 --seed 42 --out eval/concurrency-results.json
 ```
 
 `eval:contexts` 对每个任务分别构建 `selection`、`window`、`full` 上下文，运行确定性的 mock 输出协议校验，并输出 `strategy,task,validity,retries,latency,inputChars,suggestionCount` CSV。任务集可以是数组，也可以是包含 `tasks` 数组的 JSON 对象；可用 `rawOutputs` 为单个任务提供“第一次失败、第二次重试”的输入。`eval:concurrency` 使用可复现的种子模拟多个客户端的编辑、评论和建议，报告最终是否收敛、锚点 `exact` / `relocated` / `detached` 数量以及过期建议检出比例。`--steps` 表示事件数，不等待真实时间；同一 `--seed` 会生成同一事件序列。
