@@ -326,7 +326,8 @@ function App(): React.ReactElement {
             </button>
             {selectedRange ? (
               <span>
-                选区 {selectedRange.start}–{selectedRange.end}
+                已选中 {selectedRange.end - selectedRange.start} 个字符 · 选区{' '}
+                {selectedRange.start}–{selectedRange.end}
               </span>
             ) : (
               <span>先选择一段文字</span>
@@ -337,7 +338,11 @@ function App(): React.ReactElement {
             editable={editable}
             onChange={updateText}
             onSelectionChange={(selection) => {
-              setSelectedRange({ start: selection.start, end: selection.end });
+              setSelectedRange(
+                selection.start < selection.end
+                  ? { start: selection.start, end: selection.end }
+                  : null,
+              );
               socketRef.current?.send(
                 JSON.stringify({
                   type: 'awareness',
@@ -372,6 +377,11 @@ function App(): React.ReactElement {
           </nav>
           {tab === 'comments' ? (
             <>
+              {selectedRange && !activeThread ? (
+                <div className="selection-note">
+                  评论将关联当前选区（{selectedRange.end - selectedRange.start} 个字符）
+                </div>
+              ) : null}
               <textarea
                 className="small-input"
                 placeholder={activeThread ? '回复当前线程' : '新建评论，可 @成员'}

@@ -9,3 +9,4 @@
 .agent-config-form textarea { min-height: 58px; resize: vertical; }
 .agent-config-form button { display: inline-block; width: auto; margin-right: 6px; border: 1px solid #cbd2df; padding: 5px 8px; }
 .agent-config-message { color: #166534; }
+.selection-note { margin: 0 0 8px; padding: 8px 10px; border-left: 3px solid #315dcc; background: #f5f8ff; color: #315dcc; font-size: 12px; }
