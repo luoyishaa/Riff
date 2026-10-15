@@ -31,9 +31,17 @@
 ### M4 当前进展
 - 已完成：review 层的 Batch 创建/进度/逐条处理与 accept-remaining/reject-remaining API；agent 的 effectiveRole、selection/full 上下文、人工快照、重叠建议 stale；stale agent suggestion 的 regenerate API 与 web 操作入口。
 - 已完成：任务线程可在创建时指定文档成员 agent，创建即触发一次运行；web 已显示 Batch 处理进度并提供「接受剩余 / 拒绝剩余」。
-- 尚未完成：完整的人工修改并发演示与 Agent 配置管理界面。
+- 已完成：CodeMirror 6 编辑器已替换正文 textarea；Agent 标签页 owner 可保存/恢复文档级适配器、上下文策略和授予角色配置，配置持久化在 SQLite。
+- 尚未完成：完整的人工修改并发演示；当前 CodeMirror 仍通过父层 Yjs 状态桥接，未使用专用 y-codemirror binding。
 
 ### M5 当前进展
 - 已完成：README、API 速查和 `docs/demo.md` 已对应当前 server/web 启动方式、评论提及、mock agent、审批和 stale 演示流程。
 - 尚未完成：独立的 `pnpm demo:seed` 重置脚本；当前首次启动 server 会按 `seed.config.json` 自动种子。
+
+### M6 报告
+- 完成情况：✅ `scripts/eval-contexts.mjs` 对任务集在 `selection`、`window`、`full` 三种策略下构建上下文，执行 JSON 输出提取、编辑定位、重试和建议计数，并输出 CSV；✅ `scripts/eval-concurrency.mjs` 使用可复现 PRNG 模拟多客户端编辑、评论、建议和最终同步，报告收敛、锚点 `exact` / `relocated` / `detached` 与过期建议检出比例；✅ 根 `package.json` 增加 `eval:contexts` 与 `eval:concurrency` 入口，并提供 `eval/taskset.json` 示例任务集。
+- 如何验证：`pnpm eval:contexts eval/taskset.json`；`pnpm eval:concurrency --clients 4 --steps 200 --seed 42`；两条命令均在 Windows PowerShell 下直接输出结果，重复相同 seed 的并发事件序列保持一致。
+- 偏离与决定：评测脚本保持纯 Node 实现，不引入运行中的服务或新的依赖；并发评测用 `--steps` 控制事件数，以便在本地和 CI 中复现，不等待真实秒数。上下文评测的 `latency` 是本机执行协议构建与校验的毫秒耗时，`rawOutputs` 仅用于任务集显式描述适配器输出和重试场景。
+- 已知问题：脚本评估的是确定性 mock 协议和内存并发模型，不等同于真实模型网络延迟或多进程 Yjs 压测；需结合 `agent_runs` 和人工演示评估真实适配器。
+- 下一步建议：将线上 AgentRun 导出为相同任务集格式后，补充真实适配器的离线结果对比。
 

@@ -1,7 +1,8 @@
 import Fastify from 'fastify';
-import { can, randomId, systemClock, type Principal, type Role } from '@collab/kernel';
+import { can, randomId, roleRank, systemClock, type Principal, type Role } from '@collab/kernel';
 import { ReviewService, type ReviewEvent } from '@collab/review';
-import { createMessageSchema, createSuggestionSchema, createThreadSchema } from '@collab/protocol';
+import type { AdapterConfig, AgentConfig } from '@collab/agent';
+import { agentConfigSchema, createMessageSchema, createSuggestionSchema, createThreadSchema } from '@collab/protocol';
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import { DocumentStore } from './infra/document-store.js';
 import { ReviewStore } from './infra/review-store.js';
@@ -65,6 +66,22 @@ function principal(id: string): Principal | undefined {
   return value;
 }
 function roleFor(docId: string, principalId: string): Role | null { return store.role(docId, principalId); }
+function agentConfigFromInput(principalId: string, input: {
+  adapter: { type: 'mock' } | { type: 'openai-compatible'; baseUrl: string; apiKeyEnv: string; model: string } | { type: 'cli'; command: string; args?: string[] | undefined; timeoutMs?: number | undefined };
+  grantedRole: Role;
+  contextStrategy: AgentConfig['contextStrategy'];
+}): AgentConfig {
+  let adapter: AdapterConfig;
+  if (input.adapter.type === 'mock') adapter = { type: 'mock' };
+  else if (input.adapter.type === 'openai-compatible') adapter = { type: 'openai-compatible', baseUrl: input.adapter.baseUrl, apiKeyEnv: input.adapter.apiKeyEnv, model: input.adapter.model };
+  else adapter = {
+    type: 'cli',
+    command: input.adapter.command,
+    ...(input.adapter.args === undefined ? {} : { args: input.adapter.args }),
+    ...(input.adapter.timeoutMs === undefined ? {} : { timeoutMs: input.adapter.timeoutMs }),
+  };
+  return { principalId, adapter, grantedRole: input.grantedRole, contextStrategy: input.contextStrategy };
+}
 function fail(reply: { code: (status: number) => { send: (value: unknown) => unknown } }, status: number, code: string, message: string): unknown {
   return reply.code(status).send({ error: { code, message } });
 }
@@ -111,6 +128,39 @@ app.get<{ Params: { id: string } }>('/api/docs/:id/agents', async (request, repl
   const role = roleFor(request.params.id, principalId);
   if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
   return agentRuntime?.list(request.params.id) ?? [];
+});
+app.get<{ Params: { id: string; agentId: string } }>('/api/docs/:id/agents/:agentId', async (request, reply) => {
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  const agent = principal(request.params.agentId);
+  if (!agent || agent.kind !== 'agent' || !roleFor(request.params.id, agent.id)) return fail(reply, 404, 'agent-not-found', 'Agent is not a document member');
+  const config = agentRuntime?.config(request.params.id, agent.id);
+  return config ?? { principalId: agent.id, adapter: { type: 'mock' as const }, grantedRole: roleFor(request.params.id, agent.id) ?? 'suggester', contextStrategy: 'window' as const };
+});
+app.put<{ Params: { id: string; agentId: string } }>('/api/docs/:id/agents/:agentId', async (request, reply) => {
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'manage')) return fail(reply, 403, 'permission-denied', 'Owner role is required');
+  const agent = principal(request.params.agentId);
+  const memberRole = agent ? roleFor(request.params.id, agent.id) : null;
+  if (!agent || agent.kind !== 'agent' || memberRole === null) return fail(reply, 400, 'invalid-agent', 'Agent is not a document member');
+  const parsed = agentConfigSchema.safeParse(request.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid-request', parsed.error.message);
+  if (parsed.data.principalId !== undefined && parsed.data.principalId !== agent.id) return fail(reply, 400, 'invalid-agent', 'Configuration principal does not match the path');
+  if (roleRank(parsed.data.grantedRole) > roleRank(memberRole)) return fail(reply, 400, 'invalid-role', 'Granted role cannot exceed the agent membership role');
+  const config = agentConfigFromInput(agent.id, parsed.data);
+  agentRuntime?.configure(request.params.id, config);
+  return config;
+});
+app.delete<{ Params: { id: string; agentId: string } }>('/api/docs/:id/agents/:agentId', async (request, reply) => {
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'manage')) return fail(reply, 403, 'permission-denied', 'Owner role is required');
+  const agent = principal(request.params.agentId);
+  if (!agent || agent.kind !== 'agent' || !roleFor(request.params.id, agent.id)) return fail(reply, 404, 'agent-not-found', 'Agent is not a document member');
+  agentRuntime?.removeConfig(request.params.id, agent.id);
+  return { ok: true };
 });
 app.get<{ Params: { id: string } }>('/api/docs/:id/agent-runs', async (request, reply) => {
   const principalId = String(request.headers['x-principal-id'] ?? '');

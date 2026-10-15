@@ -109,6 +109,7 @@ export class AgentRuntime {
       }
     }
     this.loadEnvironmentConfigs();
+    this.loadPersistedConfigs();
     this.runner = new AgentRunner({
       clock: { now: options.now },
       ids: { next: options.nextId },
@@ -137,6 +138,27 @@ export class AgentRuntime {
   }
 
   updateConfig(docId: string, config: AgentConfig): void { this.configs.set(this.key(docId, config.principalId), config); }
+
+  /** Persist a document-scoped configuration and apply it to future runs. */
+  configure(docId: string, config: AgentConfig): void {
+    this.updateConfig(docId, config);
+    this.options.agentStore.saveConfig(docId, config);
+  }
+
+  /** Remove an override and restore the member's safe default configuration. */
+  removeConfig(docId: string, agentId: string): void {
+    this.options.agentStore.deleteConfig(docId, agentId);
+    const member = this.options.store.members(docId).find((item) => item.id === agentId && item.kind === 'agent');
+    if (!member) {
+      this.configs.delete(this.key(docId, agentId));
+      return;
+    }
+    this.configs.set(this.key(docId, agentId), this.defaultConfig(agentId, member.role));
+  }
+
+  config(docId: string, agentId: string): AgentConfig | undefined {
+    return this.configs.get(this.key(docId, agentId));
+  }
 
   regenerate(suggestionId: string, requesterId: string): boolean {
     const suggestion = this.options.reviewStore.getSuggestion(suggestionId);
@@ -277,6 +299,10 @@ export class AgentRuntime {
 
   private key(docId: string, agentId: string): string { return `${docId}:${agentId}`; }
 
+  private defaultConfig(principalId: string, role: Role): AgentConfig {
+    return { principalId, adapter: { type: 'mock' }, grantedRole: role, contextStrategy: 'window' };
+  }
+
   private loadEnvironmentConfigs(): void {
     const raw = process.env.COLLAB_AGENT_CONFIG_JSON;
     if (!raw) return;
@@ -291,6 +317,15 @@ export class AgentRuntime {
       }
     } catch {
       // Invalid optional configuration leaves the safe mock defaults in place.
+    }
+  }
+
+  private loadPersistedConfigs(): void {
+    for (const document of this.options.store.list()) {
+      for (const config of this.options.agentStore.listConfigs(document.id)) {
+        const member = this.options.store.members(document.id).find((item) => item.id === config.principalId && item.kind === 'agent');
+        if (member) this.updateConfig(document.id, config);
+      }
     }
   }
 }

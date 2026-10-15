@@ -6,3 +6,4 @@
 - 2026-10-15：M2 的 `ReviewStore` 复用 `DocumentStore` 的 `DatabaseSync` 连接；这样建议接受路径中的 Yjs 文档更新与 review 状态更新可以由同一个 SQLite `BEGIN` / `COMMIT` 包住，避免两个连接造成部分提交。
 - 2026-10-15：SSE 事件使用进程内递增 id 和 EventEmitter；这匹配当前单进程演示的范围，暂不引入队列或 Redis，也不承诺跨重启的事件重放。
 - 2026-10-15：agent 运行记录和文本快照复用文档库的 SQLite 连接；默认成员 agent 使用 mock 适配器，OpenAI-compatible / CLI 通过同一纯文本适配器接口接入，避免 server 依赖具体模型 SDK。
+- 2026-10-15：在启动配置之外增加文档级 `agent_configs` SQLite 覆盖，并由 owner 通过 REST 管理；这样演示中可即时切换 agent 适配器和上下文策略，删除覆盖后回退到安全的 mock 默认值。该覆盖是对 SPEC「启动配置文件」的增量扩展，成员资格仍由文档 memberships 决定。

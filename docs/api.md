@@ -16,6 +16,9 @@ REST 请求用 `x-principal-id` 标识当前成员；审批类空 POST 可以省
 | POST | `/api/batches/:id/accept-remaining` | 按顺序接受 Batch 剩余建议 |
 | POST | `/api/batches/:id/reject-remaining` | 按顺序拒绝 Batch 剩余建议 |
 | GET | `/api/docs/:id/agents` | Agent 状态与适配器 |
+| GET | `/api/docs/:id/agents/:agentId` | 查询单个 Agent 配置（成员可查看） |
+| PUT | `/api/docs/:id/agents/:agentId` | owner 更新 Agent 配置（适配器、授予角色、上下文策略） |
+| DELETE | `/api/docs/:id/agents/:agentId` | owner 删除文档级配置并恢复 mock 默认值 |
 | GET | `/api/docs/:id/agent-runs` | Agent 运行记录 |
 | GET | `/api/docs/:id/events` | SSE；事件名与 data envelope 同步推送 |
 | WS | `/ws/docs/:id?principal=...` | Yjs 文本同步与 awareness |

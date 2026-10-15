@@ -9,6 +9,8 @@
     "lint": "eslint .",
     "test": "vitest run",
     "boundaries": "node scripts/check-boundaries.mjs",
+    "eval:contexts": "node scripts/eval-contexts.mjs",
+    "eval:concurrency": "node scripts/eval-concurrency.mjs",
     "dev": "pnpm --filter @collab/server dev"
   },
   "devDependencies": {

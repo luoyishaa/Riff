@@ -1,5 +1,22 @@
 import type { DatabaseSync } from 'node:sqlite';
-import type { AgentRun, AgentRunRepository, AgentView, AgentViewRepository } from '@collab/agent';
+import { roles, type Role } from '@collab/kernel';
+import type { AgentConfig, AgentRun, AgentRunRepository, AgentView, AgentViewRepository } from '@collab/agent';
+
+function isAgentConfig(value: unknown): value is AgentConfig {
+  if (typeof value !== 'object' || value === null) return false;
+  const item = value as Record<string, unknown>;
+  if (typeof item.principalId !== 'string' || !roles.includes(item.grantedRole as Role)) return false;
+  if (item.contextStrategy !== 'selection' && item.contextStrategy !== 'window' && item.contextStrategy !== 'full') return false;
+  if (typeof item.adapter !== 'object' || item.adapter === null) return false;
+  const adapter = item.adapter as Record<string, unknown>;
+  if (adapter.type === 'mock') return true;
+  if (adapter.type === 'openai-compatible') {
+    return typeof adapter.baseUrl === 'string' && typeof adapter.apiKeyEnv === 'string' && typeof adapter.model === 'string';
+  }
+  return adapter.type === 'cli' && typeof adapter.command === 'string'
+    && (adapter.args === undefined || Array.isArray(adapter.args))
+    && (adapter.timeoutMs === undefined || typeof adapter.timeoutMs === 'number');
+}
 
 export class AgentStore implements AgentRunRepository, AgentViewRepository {
   constructor(readonly db: DatabaseSync) {
@@ -25,6 +42,13 @@ export class AgentStore implements AgentRunRepository, AgentViewRepository {
       taken_at INTEGER NOT NULL,
       PRIMARY KEY (agent_id, doc_id)
     );
+    CREATE TABLE IF NOT EXISTS agent_configs (
+      doc_id TEXT NOT NULL,
+      agent_id TEXT NOT NULL,
+      config_json TEXT NOT NULL,
+      updated_at INTEGER NOT NULL,
+      PRIMARY KEY (doc_id, agent_id)
+    );
     CREATE INDEX IF NOT EXISTS agent_runs_doc_started ON agent_runs(doc_id, started_at);`);
   }
 
@@ -47,6 +71,43 @@ export class AgentStore implements AgentRunRepository, AgentViewRepository {
     const row = this.db.prepare(`SELECT agent_id as agentId, doc_id as docId, text_snapshot as textSnapshot, taken_at as takenAt
       FROM agent_views WHERE agent_id = ? AND doc_id = ?`).get(agentId, docId) as AgentView | undefined;
     return row;
+  }
+
+  getConfig(docId: string, agentId: string): AgentConfig | undefined {
+    const row = this.db.prepare('SELECT config_json as configJson FROM agent_configs WHERE doc_id = ? AND agent_id = ?')
+      .get(docId, agentId) as { configJson?: string } | undefined;
+    if (!row?.configJson) return undefined;
+    try {
+      const value: unknown = JSON.parse(row.configJson);
+      return isAgentConfig(value) && value.principalId === agentId ? value : undefined;
+    } catch {
+      return undefined;
+    }
+  }
+
+  listConfigs(docId: string): AgentConfig[] {
+    const rows = this.db.prepare('SELECT agent_id as agentId, config_json as configJson FROM agent_configs WHERE doc_id = ?')
+      .all(docId) as Array<{ agentId: string; configJson: string }>;
+    const configs: AgentConfig[] = [];
+    for (const row of rows) {
+      try {
+        const value: unknown = JSON.parse(row.configJson);
+        if (isAgentConfig(value) && value.principalId === row.agentId) configs.push(value);
+      } catch {
+        // A malformed row is ignored; the runtime falls back to its safe default.
+      }
+    }
+    return configs;
+  }
+
+  saveConfig(docId: string, config: AgentConfig): void {
+    this.db.prepare(`INSERT OR REPLACE INTO agent_configs(doc_id, agent_id, config_json, updated_at)
+      VALUES (?, ?, ?, ?)`)
+      .run(docId, config.principalId, JSON.stringify(config), Date.now());
+  }
+
+  deleteConfig(docId: string, agentId: string): void {
+    this.db.prepare('DELETE FROM agent_configs WHERE doc_id = ? AND agent_id = ?').run(docId, agentId);
   }
 
   listRuns(docId: string): AgentRun[] {
