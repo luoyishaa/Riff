@@ -4,14 +4,14 @@
   "packageManager": "pnpm@11.25.0",
   "engines": { "node": ">=20" },
   "scripts": {
-    "check": "pnpm typecheck && pnpm lint && pnpm test && pnpm boundaries",
+    "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test && corepack pnpm boundaries",
     "typecheck": "tsc -b",
     "lint": "eslint .",
     "test": "vitest run",
     "boundaries": "node scripts/check-boundaries.mjs",
     "eval:contexts": "node scripts/eval-contexts.mjs",
     "eval:concurrency": "node scripts/eval-concurrency.mjs",
-    "dev": "pnpm --filter @collab/server dev"
+    "dev": "corepack pnpm --filter @collab/server dev"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
