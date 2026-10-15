@@ -149,6 +149,10 @@ export class AgentRuntime {
   }
 
   handle(event: ReviewEvent): void {
+    if (event.type === 'thread.created') {
+      if (event.thread.kind === 'task' && event.thread.agentId !== undefined) this.trigger(event.thread.id, event.thread.agentId, event.thread.createdBy, '请处理这个任务。');
+      return;
+    }
     if (event.type !== 'message.created') return;
     const message = event.message;
     const thread = this.options.reviewStore.getThread(message.threadId);

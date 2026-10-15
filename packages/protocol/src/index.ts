@@ -13,6 +13,7 @@ export const threadScopeSchema = z.union([
 ]);
 export const createThreadSchema = z.object({
   kind: z.enum(['discussion', 'task']).default('discussion'),
+  agentId: z.string().optional(),
   scope: threadScopeSchema.default({ type: 'document' }),
 });
 export const createMessageSchema = z.object({ body: z.string().min(1).max(20000) });

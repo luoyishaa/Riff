@@ -12,6 +12,7 @@ export interface Thread {
   docId: string;
   scope: ThreadScope;
   kind: ThreadKind;
+  agentId?: string;
   status: ThreadStatus;
   createdBy: string;
   createdAt: number;
@@ -111,6 +112,7 @@ export interface CreateThreadInput {
   docId: string;
   scope: ThreadScope;
   kind: ThreadKind;
+  agentId?: string;
   createdBy: string;
   createdByRole?: Role;
 }

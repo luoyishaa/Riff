@@ -124,6 +124,10 @@ app.post<{ Params: { id: string } }>('/api/docs/:id/threads', async (request, re
   if (!role || !can(role, 'comment')) return fail(reply, 403, 'permission-denied', 'Commenter role is required');
   const parsed = createThreadSchema.safeParse(request.body);
   if (!parsed.success) return fail(reply, 400, 'invalid-request', parsed.error.message);
+  if (parsed.data.agentId !== undefined) {
+    const assigned = principal(parsed.data.agentId);
+    if (!assigned || assigned.kind !== 'agent' || !roleFor(request.params.id, assigned.id)) return fail(reply, 400, 'invalid-agent', 'Assigned agent is not a document member');
+  }
   const scope = parsed.data.scope.type === 'document'
     ? { type: 'document' as const }
     : (() => {
@@ -131,7 +135,7 @@ app.post<{ Params: { id: string } }>('/api/docs/:id/threads', async (request, re
       return anchor.ok ? { type: 'range' as const, anchor: anchor.value } : anchor;
     })();
   if ('ok' in scope && !scope.ok) return fail(reply, 400, scope.error, 'Selection is outside the document');
-  const result = reviewService.createThread({ docId: request.params.id, scope: 'anchor' in scope ? scope : { type: 'document' }, kind: parsed.data.kind, createdBy: principalId, createdByRole: role });
+  const result = reviewService.createThread({ docId: request.params.id, scope: 'anchor' in scope ? scope : { type: 'document' }, kind: parsed.data.kind, ...(parsed.data.agentId === undefined ? {} : { agentId: parsed.data.agentId }), createdBy: principalId, createdByRole: role });
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to create thread');
   return result.value;
 });

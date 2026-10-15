@@ -78,6 +78,7 @@ export class ReviewService {
       docId: input.docId,
       scope: input.scope,
       kind: input.kind,
+      ...(input.agentId === undefined ? {} : { agentId: input.agentId }),
       status: 'open',
       createdBy: input.createdBy,
       createdAt: this.options.clock.now(),

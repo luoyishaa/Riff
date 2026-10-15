@@ -9,25 +9,26 @@ export class ReviewStore implements ReviewRepository {
   readonly db: DatabaseSync;
   constructor(database: DatabaseSync | string) {
     this.db = typeof database === 'string' ? new DatabaseSync(database) : database;
-    this.db.exec(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, scope_json TEXT NOT NULL, kind TEXT NOT NULL, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+    this.db.exec(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, scope_json TEXT NOT NULL, kind TEXT NOT NULL, agent_id TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS threads_doc_created ON threads(doc_id, created_at);
       CREATE INDEX IF NOT EXISTS messages_thread_created ON messages(thread_id, created_at);
       CREATE INDEX IF NOT EXISTS suggestions_doc_status ON suggestions(doc_id, status);`);
+    try { this.db.exec('ALTER TABLE threads ADD COLUMN agent_id TEXT'); } catch { /* Existing databases already have the column. */ }
   }
   listThreads(docId: string): StoredThread[] {
-    return (this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, status, created_by as createdBy, created_at as createdAt FROM threads WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>).map((row) => ({ ...row, scope: JSON.parse(String(row.scope)) }) as StoredThread);
+    return (this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, agent_id as agentId, status, created_by as createdBy, created_at as createdAt FROM threads WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>).map((row) => this.thread(row));
   }
   getThread(id: string): StoredThread | undefined {
-    const row = this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, status, created_by as createdBy, created_at as createdAt FROM threads WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    return row ? ({ ...row, scope: JSON.parse(String(row.scope)) } as StoredThread) : undefined;
+    const row = this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, agent_id as agentId, status, created_by as createdBy, created_at as createdAt FROM threads WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    return row ? this.thread(row) : undefined;
   }
   createThread(thread: StoredThread): void {
-    this.db.prepare('INSERT INTO threads(id, doc_id, scope_json, kind, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.status, thread.createdBy, thread.createdAt);
+    this.db.prepare('INSERT INTO threads(id, doc_id, scope_json, kind, agent_id, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.agentId ?? null, thread.status, thread.createdBy, thread.createdAt);
   }
-  saveThread(thread: Thread): void { this.db.prepare('INSERT OR REPLACE INTO threads(id, doc_id, scope_json, kind, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.status, thread.createdBy, thread.createdAt); }
+  saveThread(thread: Thread): void { this.db.prepare('INSERT OR REPLACE INTO threads(id, doc_id, scope_json, kind, agent_id, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.agentId ?? null, thread.status, thread.createdBy, thread.createdAt); }
   resolveThread(id: string): void { this.db.prepare('UPDATE threads SET status = \'resolved\' WHERE id = ?').run(id); }
   listMessages(threadId: string): StoredMessage[] {
     return (this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, created_at as createdAt FROM messages WHERE thread_id = ? ORDER BY created_at').all(threadId) as Array<Record<string, unknown>>).map((row) => ({ ...row, mentions: JSON.parse(String(row.mentions)) }) as StoredMessage);
@@ -58,5 +59,13 @@ export class ReviewStore implements ReviewRepository {
     this.db.exec('BEGIN');
     try { const value = work(); this.db.exec('COMMIT'); return value; }
     catch (error) { this.db.exec('ROLLBACK'); throw error; }
+  }
+
+  private thread(row: Record<string, unknown>): StoredThread {
+    return {
+      id: String(row.id), docId: String(row.docId), scope: JSON.parse(String(row.scope)) as StoredThread['scope'], kind: row.kind as StoredThread['kind'],
+      ...(row.agentId === null || row.agentId === undefined ? {} : { agentId: String(row.agentId) }),
+      status: row.status as StoredThread['status'], createdBy: String(row.createdBy), createdAt: Number(row.createdAt),
+    };
   }
 }
