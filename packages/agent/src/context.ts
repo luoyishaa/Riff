@@ -14,6 +14,7 @@ export interface ContextInput {
 export interface AgentContext {
   text: string;
   allowedText: string;
+  allowedOffset: number;
   inputChars: number;
 }
 
@@ -44,5 +45,5 @@ export function buildContext(input: ContextInput): AgentContext {
   if (changes) parts.push(changes);
   let text = parts.join('\n\n');
   if (text.length > input.maxChars) text = `${text.slice(0, Math.max(0, input.maxChars - 20))}\n[上下文已截断]`;
-  return { text, allowedText: selection ?? input.documentText, inputChars: text.length };
+  return { text, allowedText: selection ?? input.documentText, allowedOffset: input.selection?.start ?? 0, inputChars: text.length };
 }

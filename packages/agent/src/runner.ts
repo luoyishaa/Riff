@@ -60,7 +60,7 @@ export class AgentRunner {
       try {
         result = await this.execute(request, run, role, control);
       } catch (error) {
-        result = await this.fail(request, run, role, toError(error), control);
+        result = await this.fail(request, run, role, control.timedOut() ? 'timeout' : toError(error), control);
       } finally {
         control.cancel();
       }

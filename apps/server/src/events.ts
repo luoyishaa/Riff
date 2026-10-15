@@ -1,7 +1,7 @@
 import { EventEmitter } from 'node:events';
 import type { ReviewEvent } from '@collab/review';
 
-export interface AppEvent { id: string; type: ReviewEvent['type'] | 'document.changed'; docId: string; occurredAt: number; data: unknown }
+export interface AppEvent { id: string; type: ReviewEvent['type'] | 'document.changed' | 'agent.status'; docId: string; occurredAt: number; data: unknown }
 export class AppEventBus {
   private readonly emitter = new EventEmitter();
   private sequence = 0;

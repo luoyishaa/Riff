@@ -15,6 +15,12 @@ describe('agent protocol', () => {
     const result = await new MockAdapter().run({ system: '', user: 'replace "A" with "B"' }, { signal: new AbortController().signal });
     expect(parseAgentOutput(result.text).ok).toBe(true);
   });
+
+  it('uses the latest trigger when context contains older edit requests', async () => {
+    const result = await new MockAdapter().run({ system: '', user: '线程：把「A」改成「B」\n触发消息：把「B」改成「C」' }, { signal: new AbortController().signal });
+    expect(result.text).toContain('"quote":"B"');
+    expect(result.text).toContain('"newText":"C"');
+  });
 });
 
 describe('context', () => {

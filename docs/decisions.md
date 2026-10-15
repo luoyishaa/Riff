@@ -5,3 +5,4 @@
 - 2026-10-15：当前 Node 24 运行时使用内置 `node:sqlite` 完成 M1 的 SQLite repository，避免 Windows 本机没有预编译 better-sqlite3 二进制时无法启动；repository API 保持在 `apps/server/src/infra` 边界内，后续可替换为 better-sqlite3。
 - 2026-10-15：M2 的 `ReviewStore` 复用 `DocumentStore` 的 `DatabaseSync` 连接；这样建议接受路径中的 Yjs 文档更新与 review 状态更新可以由同一个 SQLite `BEGIN` / `COMMIT` 包住，避免两个连接造成部分提交。
 - 2026-10-15：SSE 事件使用进程内递增 id 和 EventEmitter；这匹配当前单进程演示的范围，暂不引入队列或 Redis，也不承诺跨重启的事件重放。
+- 2026-10-15：agent 运行记录和文本快照复用文档库的 SQLite 连接；默认成员 agent 使用 mock 适配器，OpenAI-compatible / CLI 通过同一纯文本适配器接口接入，避免 server 依赖具体模型 SDK。

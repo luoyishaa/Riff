@@ -21,3 +21,14 @@
 - 已知问题：M3 agent dispatcher、运行记录和 agent 标签页尚未实现；批量处理 API 已提供，web 尚未展示 Batch 卡片。
 - 下一步建议：实现 agent 运行协议、上下文裁剪、超时/重试和前端 Agent 运行记录。
 
+### M3 报告
+- 完成情况：✅ `packages/agent` 提供 mock、openai-compatible、CLI 适配器接口；selection/window/full 上下文构建；JSON 输出提取与 edit 定位校验；有效角色过滤；超时、一次重试、失败反馈、运行记录和 `(agentId, threadId)` 单飞调度；✅ server 接入默认 mock agent、SQLite `agent_runs` / `agent_views`、`agent.status` SSE、Agent 查询接口；✅ web 增加 Agent 标签页。
+- 如何验证：`pnpm check`；`pnpm --filter @collab/web build`；真实服务冒烟验证 `@Polisher 把「A」改成「B」` 生成待审建议，Alice 接受后正文从 `A` 变为 `B`，运行记录写入，Agent 状态回到 idle；Dan 以 commenter 触发时只收到回复，不生成建议。
+- 偏离与决定：agent 配置默认从文档成员生成并使用 mock；OpenAI-compatible 与 CLI 适配器已实现可替换接口，运行时通过配置选择，尚未在本机调用真实模型或命令行工具。
+- 已知问题：Agent 标签页当前只读展示；任务线程的 agent 指派与完整 Batch UI 留到 M4；人工修改 diff 的提示已写入上下文，但还没有独立的可视化记录。
+- 下一步建议：补任务型评论的 agent 指派、Batch 进度界面、重新生成和人工修改感知的并发演示。
+
+### M4 当前进展
+- 已完成：review 层的 Batch 创建/进度/逐条处理与 accept-remaining/reject-remaining API；agent 的 effectiveRole、selection/full 上下文、人工快照、重叠建议 stale；stale agent suggestion 的 regenerate API 与 web 操作入口。
+- 尚未完成：任务线程的 agent 指派控件、Batch 进度卡片和完整的并发演示。
+

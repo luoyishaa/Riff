@@ -38,6 +38,9 @@ importers:
 
   apps/server:
     dependencies:
+      '@collab/agent':
+        specifier: workspace:*
+        version: link:../../packages/agent
       '@collab/kernel':
         specifier: workspace:*
         version: link:../../packages/kernel

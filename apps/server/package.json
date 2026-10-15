@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": { "dev": "tsx src/main.ts", "start": "node dist/src/main.js" },
   "dependencies": {
+    "@collab/agent": "workspace:*",
     "@collab/kernel": "workspace:*",
     "@collab/review": "workspace:*",
     "@collab/protocol": "workspace:*",

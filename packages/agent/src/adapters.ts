@@ -3,8 +3,9 @@ import type { AgentAdapter } from './types.js';
 export class MockAdapter implements AgentAdapter {
   readonly id = 'mock';
   async run(req: { system: string; user: string }, _opts: { signal: AbortSignal }): Promise<{ text: string }> {
-    const english = /replace\s+"([^"]*)"\s+with\s+"([^"]*)"/i.exec(req.user);
-    const chinese = /把「([^」]*)」改成「([^」]*)」/.exec(req.user);
+    const trigger = req.user.includes('触发消息：') ? req.user.slice(req.user.lastIndexOf('触发消息：') + '触发消息：'.length) : req.user;
+    const english = /replace\s+"([^"]*)"\s+with\s+"([^"]*)"/i.exec(trigger);
+    const chinese = /把「([^」]*)」改成「([^」]*)」/.exec(trigger);
     const match = english ?? chinese;
     if (!match) return { text: JSON.stringify({ reply: `收到：${req.user}`, edits: [] }) };
     const quote = match[1] ?? '';

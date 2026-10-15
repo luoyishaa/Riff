@@ -5,6 +5,8 @@ import { createMessageSchema, createSuggestionSchema, createThreadSchema } from 
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import { DocumentStore } from './infra/document-store.js';
 import { ReviewStore } from './infra/review-store.js';
+import { AgentStore } from './infra/agent-store.js';
+import { AgentRuntime } from './agent-runtime.js';
 import { AppEventBus } from './events.js';
 import { resolveMentions } from './mentions.js';
 
@@ -28,7 +30,9 @@ const dbPath = process.env.COLLAB_DB_PATH ?? 'collab.db';
 const store = new DocumentStore(dbPath);
 store.seed();
 const reviewStore = new ReviewStore(store.db);
+const agentStore = new AgentStore(store.db);
 const eventBus = new AppEventBus();
+let agentRuntime: AgentRuntime | undefined;
 const reviewService = new ReviewService({
   clock: systemClock,
   ids: randomId,
@@ -37,8 +41,10 @@ const reviewService = new ReviewService({
   emit: (event) => {
     const docId = eventDocId(event);
     if (docId) eventBus.publish({ type: event.type, docId, occurredAt: systemClock.now(), data: eventData(event) });
+    agentRuntime?.handle(event);
   },
 });
+agentRuntime = new AgentRuntime({ store, reviewStore, reviewService, agentStore, eventBus, now: () => systemClock.now(), nextId: () => randomId.next() });
 const sockets = new Map<string, Set<WebSocket>>();
 const subscriptions = new Set<string>();
 function eventDocId(event: ReviewEvent): string {
@@ -99,6 +105,18 @@ app.get<{ Params: { id: string } }>('/api/docs/:id/suggestions', async (request,
   const role = roleFor(request.params.id, principalId);
   if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
   return reviewStore.listSuggestions(request.params.id);
+});
+app.get<{ Params: { id: string } }>('/api/docs/:id/agents', async (request, reply) => {
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  return agentRuntime?.list(request.params.id) ?? [];
+});
+app.get<{ Params: { id: string } }>('/api/docs/:id/agent-runs', async (request, reply) => {
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  return agentStore.listRuns(request.params.id);
 });
 app.post<{ Params: { id: string } }>('/api/docs/:id/threads', async (request, reply) => {
   const principalId = String(request.headers['x-principal-id'] ?? '');
@@ -173,6 +191,15 @@ app.post<{ Params: { id: string } }>('/api/suggestions/:id/reject', async (reque
   const result = reviewService.rejectSuggestion(suggestion.id, principalId, role);
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to reject suggestion');
   return result.value;
+});
+app.post<{ Params: { id: string } }>('/api/suggestions/:id/regenerate', async (request, reply) => {
+  const suggestion = reviewStore.getSuggestion(request.params.id);
+  if (!suggestion) return fail(reply, 404, 'suggestion-not-found', 'Suggestion was not found');
+  const principalId = String(request.headers['x-principal-id'] ?? '');
+  const role = roleFor(suggestion.docId, principalId);
+  if (!role || !can(role, 'suggest')) return fail(reply, 403, 'permission-denied', 'Suggester role is required');
+  if (!agentRuntime?.regenerate(suggestion.id, principalId)) return fail(reply, 400, 'invalid-state', 'Only stale agent suggestions can be regenerated');
+  return { ok: true };
 });
 app.post<{ Params: { id: string } }>('/api/batches/:id/accept-remaining', async (request, reply) => {
   const batch = reviewStore.getBatch(request.params.id);
