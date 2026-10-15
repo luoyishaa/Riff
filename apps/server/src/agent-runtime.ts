@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { resolveAnchor, type Role } from '@collab/kernel';
+import { resolveAnchor, roles, type Role } from '@collab/kernel';
 import {
   AgentDispatcher,
   AgentRunner,
@@ -39,6 +39,22 @@ interface AgentListItem {
   contextStrategy: AgentConfig['contextStrategy'];
   grantedRole: Role;
   status: AgentStatusState | 'idle';
+}
+
+function isAgentConfig(value: unknown): value is AgentConfig {
+  if (typeof value !== 'object' || value === null) return false;
+  const candidate = value as Record<string, unknown>;
+  if (typeof candidate.principalId !== 'string' || typeof candidate.grantedRole !== 'string' || !roles.includes(candidate.grantedRole as Role) || !['selection', 'window', 'full'].includes(String(candidate.contextStrategy))) return false;
+  const adapter = candidate.adapter;
+  if (typeof adapter !== 'object' || adapter === null) return false;
+  const type = (adapter as Record<string, unknown>).type;
+  if (type === 'mock') return true;
+  if (type === 'openai-compatible') {
+    const item = adapter as Record<string, unknown>;
+    return typeof item.baseUrl === 'string' && typeof item.apiKeyEnv === 'string' && typeof item.model === 'string';
+  }
+  if (type === 'cli') return typeof (adapter as Record<string, unknown>).command === 'string';
+  return false;
 }
 
 class FetchJsonClient implements HttpJsonClient {
@@ -92,6 +108,7 @@ export class AgentRuntime {
         this.configs.set(this.key(document.id, principal.id), { principalId: principal.id, adapter: { type: 'mock' }, grantedRole: role, contextStrategy: 'window' });
       }
     }
+    this.loadEnvironmentConfigs();
     this.runner = new AgentRunner({
       clock: { now: options.now },
       ids: { next: options.nextId },
@@ -255,4 +272,21 @@ export class AgentRuntime {
   }
 
   private key(docId: string, agentId: string): string { return `${docId}:${agentId}`; }
+
+  private loadEnvironmentConfigs(): void {
+    const raw = process.env.COLLAB_AGENT_CONFIG_JSON;
+    if (!raw) return;
+    try {
+      const parsed: unknown = JSON.parse(raw);
+      if (!Array.isArray(parsed)) return;
+      for (const item of parsed) {
+        if (!isAgentConfig(item)) continue;
+        for (const document of this.options.store.list()) {
+          if (this.options.store.role(document.id, item.principalId)) this.updateConfig(document.id, item);
+        }
+      }
+    } catch {
+      // Invalid optional configuration leaves the safe mock defaults in place.
+    }
+  }
 }

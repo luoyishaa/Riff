@@ -32,3 +32,7 @@
 - 已完成：review 层的 Batch 创建/进度/逐条处理与 accept-remaining/reject-remaining API；agent 的 effectiveRole、selection/full 上下文、人工快照、重叠建议 stale；stale agent suggestion 的 regenerate API 与 web 操作入口。
 - 尚未完成：任务线程的 agent 指派控件和完整的并发演示；web 已显示 Batch 处理进度并提供「接受剩余 / 拒绝剩余」。
 
+### M5 当前进展
+- 已完成：README、API 速查和 `docs/demo.md` 已对应当前 server/web 启动方式、评论提及、mock agent、审批和 stale 演示流程。
+- 尚未完成：独立的 `pnpm demo:seed` 重置脚本；当前首次启动 server 会按 `seed.config.json` 自动种子。
+
