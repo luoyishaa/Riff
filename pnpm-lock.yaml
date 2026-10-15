@@ -44,6 +44,9 @@ importers:
       '@collab/protocol':
         specifier: workspace:*
         version: link:../../packages/protocol
+      '@collab/review':
+        specifier: workspace:*
+        version: link:../../packages/review
       fastify:
         specifier: ^5.2.1
         version: 5.12.7

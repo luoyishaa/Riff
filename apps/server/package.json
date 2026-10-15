@@ -6,6 +6,7 @@
   "scripts": { "dev": "tsx src/main.ts", "start": "node dist/src/main.js" },
   "dependencies": {
     "@collab/kernel": "workspace:*",
+    "@collab/review": "workspace:*",
     "@collab/protocol": "workspace:*",
     "fastify": "^5.2.1",
     "ws": "^8.18.0",

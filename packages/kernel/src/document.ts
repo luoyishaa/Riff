@@ -12,6 +12,7 @@ export interface DocumentHandle {
   createRelativePosition(index: number, assoc?: number): Y.RelativePosition;
   resolveRelativePosition(position: Y.RelativePosition): number | null;
   transact(fn: () => void, origin?: unknown): void;
+  replace(start: number, end: number, value: string, origin?: unknown): Result<void, 'range-out-of-bounds'>;
   subscribe(listener: DocumentListener): () => void;
   ydoc: Y.Doc;
 }

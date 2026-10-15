@@ -1,6 +1,6 @@
 {
   "extends": "../../tsconfig.base.json",
   "compilerOptions": { "rootDir": ".", "outDir": "dist", "noEmit": false },
-  "references": [{ "path": "../../packages/kernel" }, { "path": "../../packages/protocol" }],
+  "references": [{ "path": "../../packages/kernel" }, { "path": "../../packages/protocol" }, { "path": "../../packages/review" }],
   "include": ["src/**/*.ts"]
 }

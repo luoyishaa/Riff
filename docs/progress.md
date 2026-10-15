@@ -14,3 +14,10 @@
 - 已知问题：Web 客户端是轻量 textarea 编辑器，尚未使用 CodeMirror 6 的完整绑定；远程光标目前传输选区状态并展示在线成员，未绘制光标装饰；评论、建议和 agent 尚未实现。
 - 下一步建议：M2 实现统一 Thread / Message / Suggestion 领域模型、审批生命周期、REST / SSE 和侧栏。
 
+### M2 报告
+- 完成情况：✅ `packages/review` 提供 Thread / Message / Suggestion / Batch 领域模型、权限策略、锚点解析、审批状态机、重叠建议失效和批量处理；✅ SQLite repository 与文档库共用同一连接，接受建议时文档替换和建议状态在同一事务中提交；✅ server 提供评论、回复、解决线程、创建/接受/拒绝建议、批量处理和 SSE 事件；✅ 服务端解析 `@displayName` 提及并跳过重名；✅ web 提供评论/建议侧栏、角色控制、接受/拒绝操作和原文→新文的 diff 预览。
+- 如何验证：`pnpm check`；`pnpm --filter @collab/web build`；启动独立端口后验证创建线程、`@Polisher` 解析、建议接受、空 JSON POST、SSE `thread.created` 事件；停止并重启服务后，已接受的替换仍从 SQLite 恢复。
+- 偏离与决定：编辑器仍是轻量 textarea，diff 目前在建议卡片中预览，尚未接入 CodeMirror 的正文装饰；事件总线仍是单进程内存实现，重启后不提供历史事件回放。
+- 已知问题：M3 agent dispatcher、运行记录和 agent 标签页尚未实现；批量处理 API 已提供，web 尚未展示 Batch 卡片。
+- 下一步建议：实现 agent 运行协议、上下文裁剪、超时/重试和前端 Agent 运行记录。
+
