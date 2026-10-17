@@ -91,7 +91,11 @@ export class AgentRunner {
     run.outputValid = true;
     const validated = request.allowedText === undefined ? { edits: parsed.value.edits, rejected: [], truncated: 0 } : validateEdits(parsed.value, request.allowedText);
     let reply = parsed.value.reply;
-    if (validated.rejected.length > 0 || validated.truncated > 0) reply += `\n${validated.rejected.length + validated.truncated} edit(s) could not be located or were discarded.`;
+    const discardedEdits = validated.rejected.length + validated.truncated;
+    if (discardedEdits > 0) {
+      reply += `\n${discardedEdits} edit(s) could not be located or were discarded.`;
+      if (validated.edits.length === 0) reply += '\n未生成可审批修改建议；请检查引用是否完整位于选区内，然后重试。';
+    }
     const edits = role === 'commenter' ? [] : validated.edits;
     if (role === 'commenter' && parsed.value.edits.length > 0) reply += '\nYour current permission only allows a reply; proposed edits were not submitted.';
     run.durationMs = Math.max(0, this.options.clock.now() - run.startedAt);

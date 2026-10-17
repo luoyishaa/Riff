@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentDispatcher, AgentRunner, MockAdapter, buildContext, effectiveRole, parseAgentOutput, validateEdits, MemoryAgentRunRepository } from '../src/index.js';
+import { AgentDispatcher, AgentRunner, MockAdapter, OpenAIResponsesAdapter, buildContext, effectiveRole, parseAgentOutput, validateEdits, MemoryAgentRunRepository } from '../src/index.js';
 
 describe('agent protocol', () => {
   it('extracts JSON from fenced output and validates unique edits', () => {
@@ -21,6 +21,13 @@ describe('agent protocol', () => {
     expect(result.text).toContain('"quote":"B"');
     expect(result.text).toContain('"newText":"C"');
   });
+
+  it('does not echo the full context when a request has no deterministic edit rule', async () => {
+    const result = await new MockAdapter().run({ system: '', user: '选区：内部草稿\n\n线程：旧讨论\n\n触发消息：请扩展这句话' }, { signal: new AbortController().signal });
+    expect(result.text).toContain('收到：请扩展这句话');
+    expect(result.text).not.toContain('内部草稿');
+    expect(result.text).not.toContain('旧讨论');
+  });
 });
 
 describe('context', () => {
@@ -28,6 +35,39 @@ describe('context', () => {
     const context = buildContext({ strategy: 'window', documentText: 'A paragraph.\n\nB paragraph.', selection: { start: 0, end: 1 }, messages: [{ author: 'Alice', body: 'Review' }], maxChars: 30 });
     expect(context.allowedText).toBe('A');
     expect(context.text).toContain('截断');
+  });
+});
+
+describe('Responses API adapter', () => {
+  it('posts instructions and input to /responses and reads output_text', async () => {
+    let request: { url: string; body: unknown; accessToken?: string } | undefined;
+    const adapter = new OpenAIResponsesAdapter(
+      { baseUrl: 'https://api.openai.com/v1', accessToken: 'oauth-token', model: 'gpt-plan' },
+      { post: async (url, body, _signal, accessToken) => {
+        request = { url, body, accessToken };
+        return { output_text: '{"reply":"ok","edits":[]}' };
+      } },
+    );
+    const result = await adapter.run({ system: 'system', user: 'user' }, { signal: new AbortController().signal });
+    expect(result.text).toBe('{"reply":"ok","edits":[]}');
+    expect(request?.url).toBe('https://api.openai.com/v1/responses');
+    expect(request?.accessToken).toBe('oauth-token');
+    expect(request?.body).toEqual({
+      model: 'gpt-plan',
+      instructions: 'system',
+      input: [{ role: 'user', content: [{ type: 'input_text', text: 'user' }] }],
+      text: { format: { type: 'json_object' } },
+      store: false,
+      stream: true,
+    });
+  });
+
+  it('extracts output_text from the Responses message content envelope', async () => {
+    const adapter = new OpenAIResponsesAdapter(
+      { baseUrl: 'https://example.test/v1', accessToken: 'oauth-token', model: 'gpt-plan' },
+      { post: async () => ({ output: [{ type: 'message', content: [{ type: 'output_text', text: 'response body' }] }] }) },
+    );
+    await expect(adapter.run({ system: '', user: '' }, { signal: new AbortController().signal })).resolves.toEqual({ text: 'response body' });
   });
 });
 
@@ -42,6 +82,22 @@ describe('runner and dispatcher', () => {
     expect(result.effectiveRole).toBe('commenter');
     expect(result.edits).toHaveLength(0);
     expect(runs.runs).toHaveLength(1);
+  });
+
+  it('explains when an otherwise valid agent edit is outside the allowed selection', async () => {
+    const runs = new MemoryAgentRunRepository();
+    const runner = new AgentRunner({
+      clock: { now: () => 100 }, ids: { next: () => 'run-invalid-selection' }, runs,
+      controls: { start: () => ({ signal: new AbortController().signal, timedOut: () => false, cancel: () => undefined }) },
+    });
+    const result = await runner.run({
+      agentId: 'agent', docId: 'doc', threadId: 'thread',
+      requester: { id: 'alice', kind: 'human', displayName: 'Alice' }, requesterRole: 'editor', grantedRole: 'editor',
+      strategy: 'selection', adapter: { id: 'test', run: async () => ({ text: JSON.stringify({ reply: '已完成扩展。', edits: [{ op: 'replace', quote: 'B', newText: 'C' }] }) }) },
+      prompt: { system: '', user: 'expand' }, inputChars: 20, allowedText: 'A',
+    });
+    expect(result.edits).toHaveLength(0);
+    expect(result.reply).toContain('未生成可审批修改建议');
   });
 
   it('queues only the latest trigger while one pair is active', async () => {

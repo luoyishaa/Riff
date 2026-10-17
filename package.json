@@ -11,6 +11,7 @@
     "boundaries": "node scripts/check-boundaries.mjs",
     "eval:contexts": "node scripts/eval-contexts.mjs",
     "eval:concurrency": "node scripts/eval-concurrency.mjs",
+    "qa:product": "node scripts/qa-product-smoke.mjs",
     "dev": "corepack pnpm --filter @collab/server dev"
   },
   "devDependencies": {

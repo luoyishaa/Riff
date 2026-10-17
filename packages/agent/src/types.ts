@@ -7,12 +7,16 @@ export interface AgentConfig {
   adapter: AdapterConfig;
   grantedRole: Role;
   contextStrategy: AgentStrategy;
+  /** Whether every document member may mention this agent. Defaults to public. */
+  accessPolicy?: 'public' | 'private';
 }
 
 export type AdapterConfig =
   | { type: 'mock' }
   | { type: 'openai-compatible'; baseUrl: string; apiKeyEnv: string; model: string }
-  | { type: 'cli'; command: string; args?: string[]; timeoutMs?: number };
+  /** Responses API transport for an OAuth access token authorized for ChatGPT plan usage. */
+  | { type: 'openai-responses'; baseUrl: string; accessTokenEnv: string; model: string; profileId?: string; ownerPrincipalId?: string }
+  | { type: 'cli'; command: string; args?: string[]; timeoutMs?: number; includeSystemInPrompt?: boolean };
 
 export interface AgentRun {
   id: string;

@@ -7,15 +7,22 @@ function isAgentConfig(value: unknown): value is AgentConfig {
   const item = value as Record<string, unknown>;
   if (typeof item.principalId !== 'string' || !roles.includes(item.grantedRole as Role)) return false;
   if (item.contextStrategy !== 'selection' && item.contextStrategy !== 'window' && item.contextStrategy !== 'full') return false;
+  if (item.accessPolicy !== undefined && item.accessPolicy !== 'public' && item.accessPolicy !== 'private') return false;
   if (typeof item.adapter !== 'object' || item.adapter === null) return false;
   const adapter = item.adapter as Record<string, unknown>;
   if (adapter.type === 'mock') return true;
   if (adapter.type === 'openai-compatible') {
     return typeof adapter.baseUrl === 'string' && typeof adapter.apiKeyEnv === 'string' && typeof adapter.model === 'string';
   }
+  if (adapter.type === 'openai-responses') {
+    return typeof adapter.baseUrl === 'string' && typeof adapter.accessTokenEnv === 'string' && typeof adapter.model === 'string'
+      && (adapter.profileId === undefined || typeof adapter.profileId === 'string')
+      && (adapter.ownerPrincipalId === undefined || typeof adapter.ownerPrincipalId === 'string');
+  }
   return adapter.type === 'cli' && typeof adapter.command === 'string'
     && (adapter.args === undefined || Array.isArray(adapter.args))
-    && (adapter.timeoutMs === undefined || typeof adapter.timeoutMs === 'number');
+    && (adapter.timeoutMs === undefined || typeof adapter.timeoutMs === 'number')
+    && (adapter.includeSystemInPrompt === undefined || typeof adapter.includeSystemInPrompt === 'boolean');
 }
 
 export class AgentStore implements AgentRunRepository, AgentViewRepository {

@@ -1,5 +1,10 @@
-import { DatabaseSync } from 'node:sqlite';
+import { createRequire } from 'node:module';
+import type { DatabaseSync } from 'node:sqlite';
 import type { Batch, Message, ReviewRepository, Suggestion, Thread } from '@collab/review';
+
+const { DatabaseSync: DatabaseSyncConstructor } = createRequire(import.meta.url)('node:sqlite') as {
+  DatabaseSync: new (path: string) => DatabaseSync;
+};
 
 export type StoredThread = Thread;
 export type StoredMessage = Message;
@@ -8,7 +13,7 @@ export type StoredSuggestion = Suggestion;
 export class ReviewStore implements ReviewRepository {
   readonly db: DatabaseSync;
   constructor(database: DatabaseSync | string) {
-    this.db = typeof database === 'string' ? new DatabaseSync(database) : database;
+    this.db = typeof database === 'string' ? new DatabaseSyncConstructor(database) : database;
     this.db.exec(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, scope_json TEXT NOT NULL, kind TEXT NOT NULL, agent_id TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, created_at INTEGER NOT NULL);

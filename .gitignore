@@ -3,8 +3,14 @@ dist/
 .env
 *.db
 *.db-*
+chatgpt-oauth.json
+*.oauth.json
 coverage/
 paper-pal/
 *.tsbuildinfo
 *.docx
 毕设*.txt
+.acceptance-fixture/
+.impeccable/
+eval/results-*.csv
+eval/concurrency-*.json

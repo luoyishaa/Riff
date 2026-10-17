@@ -7,3 +7,36 @@
 - 2026-10-15：SSE 事件使用进程内递增 id 和 EventEmitter；这匹配当前单进程演示的范围，暂不引入队列或 Redis，也不承诺跨重启的事件重放。
 - 2026-10-15：agent 运行记录和文本快照复用文档库的 SQLite 连接；默认成员 agent 使用 mock 适配器，OpenAI-compatible / CLI 通过同一纯文本适配器接口接入，避免 server 依赖具体模型 SDK。
 - 2026-10-15：在启动配置之外增加文档级 `agent_configs` SQLite 覆盖，并由 owner 通过 REST 管理；这样演示中可即时切换 agent 适配器和上下文策略，删除覆盖后回退到安全的 mock 默认值。该覆盖是对 SPEC「启动配置文件」的增量扩展，成员资格仍由文档 memberships 决定。
+- 2026-10-16：CLI provider 只允许通过固定的 Codex/Claude 预置参数接入，子进程使用 `shell:false` 和参数数组；探测采用 Codex `login status` 与 Claude `auth status`，不读取 credential 文件。OpenAI-compatible key 仅保存在 server 进程内，重启后需重新连接，避免把明文凭据写入 SQLite。
+- 2026-10-16：Agent 配置增加 `accessPolicy`（public/private）。private agent 仅接受其 `ownerId` 或文档 owner 的触发；public 仍受文档 membership 和 agent 有效角色约束。
+- 2026-10-16：任务线程的 Agent 触发延迟到首条 `message.created`，并把 `thread.agentId` 作为隐式目标；这样创建线程后紧接着发布的任务正文会进入上下文，避免用占位文本提前运行一次。
+- 2026-10-16：Codex CLI 连接预置 `model_reasoning_effort=medium`，并在 Agent prompt 中明确 `op` / `quote` / `newText` 的 edits 协议；本机默认 reasoning effort 为 ultra 时，结构化扩展任务超过运行超时且模型曾返回非协议字段 `replacement`。
+- 2026-10-16：新增 workspace 作为文档文件夹，workspace membership 默认继承到其中所有文档，文档级 membership 可覆盖继承角色；Agent 创建权限允许 commenter 以上操作者，但授予角色不得超过操作者，private Agent 仅对其所有者与文档 owner 可见和可被 @。
+- 2026-10-16：第一代文档继续保持 UTF-8 纯文本；左侧大纲由空行分隔段落的首行生成并通过字符区间关联正文，这样不引入 Markdown/富文本模型，也能为多文档导航提供稳定入口。
+- 2026-10-16：本地项目同时支持服务端目录绑定和浏览器文件夹导入。服务端目录绑定负责持续扫描与原子写回；浏览器目录选择只提交 `.txt` / `.md` 内容和相对路径，若浏览器提供 File System Access API，则当前页面可直接写回文件，否则明确作为导入清单，避免把浏览器文件句柄误当成服务端可持久访问的绝对路径。
+- 2026-10-17：创建项目、文档和成员使用居中 dialog，项目设置与目录同步使用右侧 drawer；弹层遵循 WAI-ARIA dialog 的焦点、Esc 和遮罩行为，避免把表单塞入左侧文件导航并打断编辑器层次。
+- 2026-10-17：新建项目最初允许选择本地文件夹或创建空项目，已有项目通过“目录与同步”管理来源；该决定已由 M25 的“创建时绑定本地项目、项目级同步”流程替代。
+- 2026-10-17：成员邀请采用“本地身份注册 + 空间待处理邀请”两步流程。注册只创建 demo human principal，不引入认证；owner 发出邀请后由被邀请者明确接受，接受时才写入 workspace membership。保留原有直接成员接口以兼容已有 demo 数据。
+- 2026-10-17：账户菜单采用无状态的 demo 账户语义：个人资料只保存显示名，切换账号由客户端替换 `x-principal-id`，登出只清除客户端当前身份。服务端提供校验和资料更新接口，但不创建密码、邮箱、token 或会话表，避免把身份下拉框误作认证系统。
+- 2026-10-17：Agent 配置归入项目成员操作：成员列表直接提供 Agent 配置入口，新增 Agent 也从成员区进入；右侧协作面板只保留评论和建议，个人账户收敛为右上角圆形头像入口，避免把账户、成员和 Agent 配置混成同一层级。
+- 2026-10-17：M16 开始把身份从“前端选择的 demo principal”迁移为数据库中的可查找人类账户。邀请通过账号标识提交，邀请发送、待处理邀请和当前成员维护分成独立区域；继续复用 SQLite 作为当前持久化数据库，暂不假装接入外部云数据库，认证会话另行设计并明确记录。
+- 2026-10-17：M16 为人类账户增加唯一、大小写归一化的 `handle`，并允许保存未验证的 `email` 作为第二种邀请/搜索标识；旧数据按 principal id 回填，旧 `principalId` 邀请请求暂时兼容，避免已有演示数据在迁移时失效。两者都不是密码或登录凭据。
+- 2026-10-17：因产品目标已从本地身份演示转为真实账户体系，M18 增加数据库密码凭据与哈希会话表。密码使用 Node `scryptSync` 生成带随机盐的哈希，浏览器通过 HttpOnly、SameSite=Lax cookie 持有不可逆 session token；服务端只存密码哈希和 token 哈希。旧 `x-principal-id` 仅在显式设置 `COLLAB_DEV_AUTH_BYPASS=1` 时兼容，前端主路径使用注册、登录、会话恢复和退出接口。
+- 2026-10-17：迁移期间允许注册流程认领没有密码的旧 seed principal（按其既有 handle 匹配），再写入新密码和资料；已有密码的账户不能被覆盖。这样旧演示空间可以由其原有账户进入，同时新账户仍走正常注册流程。
+- 2026-10-17：空项目状态只保留“新建项目”，不再在侧栏重复放置“打开文件夹”；已有项目的目录绑定统一进入“项目设置 / 目录与同步”。为兼容不支持 File System Access API 的浏览器，文件夹 input 不使用 HTML `hidden`，改由原生 `label` 触发 `webkitdirectory` 控件，目录权限 API 仍在可用时优先使用。
+- 2026-10-17：Chrome 实测仍可能忽略通过 `label` 或脚本 `.click()` 间接触发的文件选择器，因此新建项目和目录设置改为让真实 `input[type=file]` 以透明覆盖层直接接收用户点击；视觉按钮只作为提示层，目录权限 API 分支仍在 input 的用户点击事件内优先执行。
+- 2026-10-17：本地项目文件格式从仅 `.txt` 扩展为 `.txt` / `.md`，两者都按 UTF-8 纯文本处理；每个文件以 `workspaceId + relativePath` 映射为一个空间文档并保留原始扩展名，不按 Markdown 标题拆分，也不在本次变更引入 Markdown 渲染。
+- 2026-10-17：项目重命名只允许 owner 修改标题；删除项目要求提交与当前标题完全一致的 `confirmTitle`，服务端在同一事务中清理项目成员、邀请、文档和协作记录，顶部导航只负责切换当前可见项目。
+- 2026-10-17：Markdown 预览作为编辑器视图层实现，源码仍由 CodeMirror/Yjs 维护并沿用原有协作与写回链路；预览使用无 HTML 注入的纯 React 渲染器，限制链接协议且不加载图片，避免改变第一代纯文本领域模型。
+- 2026-10-17：项目创建必须同时选择本地文件夹或填写服务端目录路径，创建请求完成后立即绑定并导入 TXT / Markdown；项目设置只管理项目元数据和连接状态，目录选择不再作为已有项目的独立设置流程。项目级“同步”调用本地扫描/协调逻辑，统一处理云端与本地的新增、修改和冲突。
+- 2026-10-17：本机多账号列表由浏览器 `localStorage` 保存最多 12 个账号的登录标识和密码，登录页可一键登录，右上角账户菜单通过 `/api/auth/switch` 替换当前 HttpOnly 会话；这是设备级便利功能，界面明确提示共享电脑应删除保存记录，服务端仍只保存密码哈希。
+- 2026-10-17：产品验收发现 Agent 输出合法但 edit 引用不在允许选区时，原回复容易让用户误以为修改已经完成；运行器现在明确提示没有生成可审批建议，并要求检查选区引用后重试。Mock 仍遵循 SPEC，只对明确替换格式生成建议，自然语言扩展交由真实 CLI/API provider 处理。
+- 2026-10-17：本地项目同步结果必须区分更新、冲突和本地缺失；前端同步提示现在列出冲突文件并说明不会覆盖或删除，避免把保护性阻止误报成“已同步”。
+- 2026-10-17：在线成员以文档 WebSocket 的实际连接集合为准，不再把全部可见成员当成在线；当前账户最近打开的项目按 principal id 保存在浏览器本地，刷新后优先恢复仍有权限的项目。
+- 2026-10-17：大纲随正文变化做轻量防抖刷新；建议导航角标只表示 pending 数量，历史记录在队列标题中单独展示，避免把已处理建议误报成待审批。
+- 2026-10-17：ChatGPT 订阅授权使用官方 Sign in with ChatGPT 的 Responses API token；新增独立 `openai-responses` 适配器并把 token 限制在服务进程内存，避免把 OAuth token 当作 Chat Completions API key 或写入 SQLite。
+
+- 2026-10-17：ChatGPT Agent 采用官方 Sign in with ChatGPT 开源本地流程。首次授权使用 `dynamic_agent_client`，回调得到的 issued client ID 单独保存；每个本地主体可有多个 ChatGPT profile。使用 PKCE、state、nonce、loopback callback，ID token 通过 OpenAI JWKS 校验，令牌保存在本机凭据文件而不是 SQLite、浏览器或日志。`chatgpt.tokens.use.direct` 未获授权时只保留身份，不允许发起计划额度推理。依据：https://developers.openai.com/siwc/token-sharing-open-source/sign-in。
+- 2026-10-17：模型提供商设置统一通过 `/api/model-providers` 展示 OAuth、CLI 与 API-key 连接状态；OpenRouter、DeepSeek 和自定义兼容接口的 key 只保留在当前 server 进程内，Agent 通过 `/bind-provider` 读取已连接凭据，既不写 SQLite 也不回传 key。这样 UI 可以统一管理提供商，同时保留重启后重新连接的明确边界。
+- 2026-10-17：移除 ChatGPT 计划授权在模型目录和新 Agent 绑定流程中的用户入口。原因是本机账号虽能完成 OAuth，但被 OpenAI 拒绝 subscription sharing 推理；保留兼容运行时代码以避免旧配置无法读取，新的可用连接只展示 Codex CLI、Claude Code、OpenRouter、DeepSeek、OpenAI API 和自定义 OpenAI-compatible。
+- 2026-10-17：提供商默认值按供应商维护：DeepSeek 使用官方 `https://api.deepseek.com` 与 `deepseek-flash`，OpenRouter、OpenAI API 和自定义接口不预填模型；已知供应商的 Base URL 由服务端固定，避免表单误把其他供应商的 URL 或模型带入。
