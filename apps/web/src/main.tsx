@@ -93,6 +93,7 @@ type Thread = {
   kind: 'discussion' | 'task';
   agentId?: string;
   status: 'open' | 'resolved';
+  createdAt: number;
   scope: { type: 'range'; anchor: unknown; resolved?: ReviewResolution } | { type: 'document' };
   messages: Message[];
 };
@@ -115,10 +116,23 @@ type Suggestion = {
   newText: string;
   rationale?: string;
   status: 'pending' | 'accepted' | 'rejected' | 'stale';
+  createdAt: number;
   withdrawnAt?: number;
   withdrawnBy?: string;
   resolved?: ReviewResolution;
 };
+type DocumentVersion = {
+  id: string;
+  docId: string;
+  suggestionId: string;
+  threadId?: string;
+  text: string;
+  createdBy: string;
+  createdAt: number;
+};
+type ThreadTimelineItem =
+  | { kind: 'message'; id: string; createdAt: number; message: Message }
+  | { kind: 'suggestion'; id: string; createdAt: number; suggestion: Suggestion };
 type ReviewMarker = { id: string; threadId?: string; start: number; end: number; kind: 'thread' | 'suggestion'; status: 'open' | 'resolved' | 'pending' | 'accepted' | 'rejected' | 'stale'; unread?: boolean };
 type Selection = { start: number; end: number };
 type MentionState = { start: number; end: number; index: number };
@@ -288,10 +302,11 @@ type ModalProps = {
   onClose: () => void;
   children: React.ReactNode;
   variant?: 'dialog' | 'drawer';
+  className?: string;
   returnFocusRef?: React.RefObject<HTMLElement | null>;
 };
 
-function Modal({ open, title, description, onClose, children, variant = 'dialog', returnFocusRef }: ModalProps): React.ReactElement | null {
+function Modal({ open, title, description, onClose, children, variant = 'dialog', className, returnFocusRef }: ModalProps): React.ReactElement | null {
   const dialogRef = useRef<HTMLDivElement | null>(null);
   const closeRef = useRef(onClose);
   closeRef.current = onClose;
@@ -346,7 +361,7 @@ function Modal({ open, title, description, onClose, children, variant = 'dialog'
     <div className={`modal-layer ${variant === 'drawer' ? 'drawer-layer' : ''}`} role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <div
         ref={dialogRef}
-        className={`modal-surface ${variant === 'drawer' ? 'drawer-surface' : ''}`}
+        className={`modal-surface ${variant === 'drawer' ? 'drawer-surface' : ''} ${className ?? ''}`}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -497,7 +512,9 @@ function App(): React.ReactElement {
   const [online, setOnline] = useState<string[]>([]);
   const [threads, setThreads] = useState<Thread[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
+  const [versions, setVersions] = useState<DocumentVersion[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
+  const [rangeThreadId, setRangeThreadId] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<Selection | null>(null);
   const [outlineTarget, setOutlineTarget] = useState<Selection | null>(null);
   const [editorViewMode, setEditorViewMode] = useState<'source' | 'preview'>('source');
@@ -584,7 +601,6 @@ function App(): React.ReactElement {
   const localWriteTimerRef = useRef<number | null>(null);
   const headers = { 'Content-Type': 'application/json' };
   const pendingInvitations = invitations.filter((invitation) => invitation.status === 'pending');
-  const pendingSuggestionCount = suggestions.filter((suggestion) => suggestion.status === 'pending').length;
   const reviewMarkers: ReviewMarker[] = [
     ...threads.flatMap((thread) => {
       if (thread.scope.type !== 'range' || !thread.scope.resolved || thread.scope.resolved.start === undefined || thread.scope.resolved.end === undefined) return [];
@@ -595,15 +611,21 @@ function App(): React.ReactElement {
       return [{ id: `suggestion:${suggestion.id}`, ...(suggestion.threadId ? { threadId: suggestion.threadId } : {}), start: suggestion.resolved.start, end: suggestion.resolved.end, kind: 'suggestion' as const, status: suggestion.withdrawnAt !== undefined ? 'rejected' as const : suggestion.status }];
     }),
   ];
-  const globalThreads = threads.filter((thread) => thread.scope.type === 'document');
-  const activeRangeThread = activeThreadId ? threads.find((thread) => thread.id === activeThreadId && thread.scope.type === 'range') : undefined;
-  const unresolvedRangeThreads = threads.filter((thread) => thread.scope.type === 'range' && (thread.scope.resolved?.start === undefined || thread.scope.resolved?.end === undefined));
-  const visibleThreads = [
-    ...(activeRangeThread ? [activeRangeThread] : []),
-    ...globalThreads.filter((thread) => thread.id !== activeRangeThread?.id),
-    ...unresolvedRangeThreads.filter((thread) => thread.id !== activeRangeThread?.id),
-  ];
-  const unthreadedSuggestions = suggestions.filter((suggestion) => suggestion.threadId === undefined);
+  const latestThreadActivity = (thread: Thread): number => Math.max(
+    thread.createdAt,
+    ...thread.messages.map((message) => message.createdAt),
+    ...suggestions.filter((suggestion) => suggestion.threadId === thread.id).map((suggestion) => suggestion.createdAt),
+  );
+  const globalThreads = threads
+    .filter((thread) => thread.scope.type === 'document')
+    .slice()
+    .sort((left, right) => latestThreadActivity(right) - latestThreadActivity(left));
+  const rangeThread = rangeThreadId ? threads.find((thread) => thread.id === rangeThreadId && thread.scope.type === 'range') : undefined;
+  const visibleThreads = globalThreads;
+  const rangeTimeline: ThreadTimelineItem[] = rangeThread ? [
+    ...rangeThread.messages.map((message) => ({ kind: 'message' as const, id: `message:${message.id}`, createdAt: message.createdAt, message })),
+    ...suggestions.filter((suggestion) => suggestion.threadId === rangeThread.id).map((suggestion) => ({ kind: 'suggestion' as const, id: `suggestion:${suggestion.id}`, createdAt: suggestion.createdAt, suggestion })),
+  ].sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id)) : [];
   const refreshInvitations = async () => {
     const next = await request<WorkspaceInvitation[]>('/api/invitations', { headers });
     if (next) setInvitations(next);
@@ -615,13 +637,15 @@ function App(): React.ReactElement {
   };
   const reloadReview = async (docId: string) => {
     const sequence = ++reviewLoadSequenceRef.current;
-    const [nextThreads, nextSuggestions] = await Promise.all([
+    const [nextThreads, nextSuggestions, nextVersions] = await Promise.all([
       request<Thread[]>(`/api/docs/${docId}/threads`, { headers }),
       request<Suggestion[]>(`/api/docs/${docId}/suggestions`, { headers }),
+      request<DocumentVersion[]>(`/api/docs/${docId}/versions`, { headers }),
     ]);
     if (sequence !== reviewLoadSequenceRef.current) return;
     if (nextThreads) setThreads(nextThreads);
     if (nextSuggestions) setSuggestions(nextSuggestions);
+    if (nextVersions) setVersions(nextVersions);
   };
   useEffect(() => {
     let active = true;
@@ -743,6 +767,8 @@ function App(): React.ReactElement {
     preservePreviewSelectionRef.current = false;
     setSelectedRange(null);
     setActiveThreadId(null);
+    setRangeThreadId(null);
+    setVersions([]);
     setDocumentAction(null);
     setComment('');
     setMentionState(null);
@@ -1101,8 +1127,9 @@ function App(): React.ReactElement {
       {node.folders.length && !collapsedFolders.has(node.path) ? <div className="file-tree-children">{renderFileTree(node.folders, depth + 1)}</div> : null}
     </React.Fragment>
   ));
-  const activeThread = threads.find((thread) => thread.id === activeThreadId);
-  const activeAgentStatusUpdate = activeThread?.id === undefined ? latestAgentStatus : agentStatusUpdates[activeThread.id];
+  const activeThread = threads.find((thread) => thread.id === activeThreadId && thread.scope.type === 'document');
+  const activeReviewThread = activeThread ?? rangeThread;
+  const activeAgentStatusUpdate = activeReviewThread?.id === undefined ? latestAgentStatus : agentStatusUpdates[activeReviewThread.id];
   const activeAgent = activeAgentStatusUpdate ? agents.find((agent) => agent.id === activeAgentStatusUpdate.agentId) : undefined;
   const activeAgentFeedback = activeAgentStatusUpdate && activeAgent
     ? agentStatusCopy(activeAgent.displayName, activeAgentStatusUpdate.state, activeAgentStatusUpdate.error, activeAgentStatusUpdate.errorKind)
@@ -1191,7 +1218,12 @@ function App(): React.ReactElement {
     setComment('');
     setMentionState(null);
     setDocumentAction(null);
-    setActiveThreadId(thread.id);
+    if (scope.type === 'range') {
+      setRangeThreadId(thread.id);
+      setActiveThreadId(null);
+    } else {
+      setActiveThreadId(thread.id);
+    }
     setTab('comments');
     await reloadReview(doc.id);
   };
@@ -1205,6 +1237,17 @@ function App(): React.ReactElement {
     setComment('');
     setMentionState(null);
     await reloadReview(activeThread.docId);
+  };
+  const sendRangeMessage = async () => {
+    if (!rangeThread || !comment.trim()) return;
+    await request(`/api/threads/${rangeThread.id}/messages`, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ body: comment }),
+    });
+    setComment('');
+    setMentionState(null);
+    await reloadReview(rangeThread.docId);
   };
   const withdrawMessage = async (messageId: string) => {
     if (!window.confirm('撤回后其他成员只会看到“已撤回”，确定继续吗？')) return;
@@ -1220,7 +1263,25 @@ function App(): React.ReactElement {
   };
   const decide = async (id: string, action: 'accept' | 'reject' | 'regenerate') => {
     if (!doc) return;
-    await request(`/api/suggestions/${id}/${action}`, { method: 'POST', headers, body: '{}' });
+    const result = await request(`/api/suggestions/${id}/${action}`, { method: 'POST', headers, body: '{}' });
+    if (!result) {
+      setSuggestionMessage(action === 'accept' ? '这条修改没有应用，可能会破坏 Markdown 结构或选区已经失效。' : '操作未完成，请稍后重试。');
+      return;
+    }
+    setSuggestionMessage('');
+    await reloadReview(doc.id);
+  };
+  const restoreVersion = async (version: DocumentVersion) => {
+    if (!doc || !['editor', 'owner'].includes(role)) return;
+    if (!window.confirm('恢复后正文会回到这次修改之前的版本，之后的修改仍可从历史中再次恢复。确定继续吗？')) return;
+    const result = await request<{ ok: boolean; document: string }>(`/api/docs/${doc.id}/versions/${version.id}/restore`, { method: 'POST', headers, body: '{}' });
+    if (!result?.ok) {
+      setSuggestionMessage('版本恢复失败，请检查当前编辑权限。');
+      return;
+    }
+    setText(result.document);
+    setDoc((current) => current && current.id === doc.id ? { ...current, text: result.document } : current);
+    setSuggestionMessage('已恢复到这次修改之前的版本。');
     await reloadReview(doc.id);
   };
   const withdrawSuggestion = async (suggestionId: string) => {
@@ -1256,6 +1317,7 @@ function App(): React.ReactElement {
   };
   const renderSuggestionCard = (suggestion: Suggestion, legacy = false) => {
     const quote = (suggestion.anchor as AnchorPreview).quote;
+    const version = versions.find((item) => item.suggestionId === suggestion.id);
     const withdrawn = suggestion.withdrawnAt !== undefined;
     return <div className={`thread-suggestion ${legacy ? 'legacy' : ''} ${withdrawn ? 'withdrawn' : suggestion.status}`} key={suggestion.id} onClick={(event) => event.stopPropagation()}>
       <div className="suggestion-row-head"><span className={`state-chip ${withdrawn ? 'withdrawn' : suggestion.status}`}>{withdrawn ? '已撤回' : suggestion.status === 'pending' ? '待审批' : suggestion.status === 'accepted' ? '已接受' : suggestion.status === 'rejected' ? '已拒绝' : '已过期'}</span><span className="suggestion-author">{workspaceMembers.find((member) => member.id === suggestion.authorId)?.displayName ?? 'Agent'} 提出的修改</span></div>
@@ -1270,6 +1332,7 @@ function App(): React.ReactElement {
       {suggestion.status === 'pending' && !withdrawn && suggestion.authorId === principalId && role !== 'viewer' ? <div className="row-actions"><button className="subtle-button danger" type="button" onClick={() => void withdrawSuggestion(suggestion.id)}>撤回</button></div> : null}
       {suggestion.status === 'pending' && !withdrawn && ['editor', 'owner'].includes(role) && editingSuggestionId !== suggestion.id ? <div className="row-actions"><button className="subtle-button" type="button" onClick={() => beginSuggestionEdit(suggestion)}>编辑修改</button><button className="subtle-button" type="button" onClick={() => void decide(suggestion.id, 'accept')}>接受</button><button className="subtle-button danger" type="button" onClick={() => void decide(suggestion.id, 'reject')}>拒绝</button></div> : null}
       {suggestion.status === 'stale' && ['suggester', 'editor', 'owner'].includes(role) ? <div className="row-actions"><button className="subtle-button" type="button" onClick={() => void decide(suggestion.id, 'regenerate')}>重新生成</button></div> : null}
+      {suggestion.status === 'accepted' && version && ['editor', 'owner'].includes(role) ? <div className="row-actions version-actions"><button className="subtle-button" type="button" onClick={() => void restoreVersion(version)}>恢复到这次修改前</button><small>可从历史继续回退</small></div> : null}
     </div>;
   };
   const resetNewWorkspaceDraft = () => {
@@ -1666,7 +1729,14 @@ function App(): React.ReactElement {
     const marker = reviewMarkers.find((item) => item.id === markerId);
     const threadId = marker?.threadId ?? (markerId.startsWith('thread:') ? markerId.slice('thread:'.length) : undefined);
     if (!threadId) return;
-    setActiveThreadId(threadId);
+    const thread = threads.find((item) => item.id === threadId);
+    if (thread?.scope.type === 'range') {
+      setRangeThreadId(threadId);
+      setActiveThreadId(null);
+    } else {
+      setActiveThreadId(threadId);
+      setRangeThreadId(null);
+    }
     setDocumentAction(null);
     setSelectedRange(marker ? { start: marker.start, end: marker.end } : null);
     setTab('comments');
@@ -2020,8 +2090,8 @@ function App(): React.ReactElement {
               <>
                 <div className="panel-intro">
                   <div>
-                    <h3>{activeThread ? '回复线程' : '发起讨论'}</h3>
-                    <p>{activeThread ? '继续补充上下文，让协作者知道下一步。' : '选中文字后，评论会自动关联对应范围；@成员或 Agent 可以继续讨论和处理。'}</p>
+                    <h3>{activeThread ? '回复全局讨论' : '全局评论'}</h3>
+                    <p>{activeThread ? '继续补充整篇文档的上下文，让协作者知道下一步。' : '这里集中显示整篇文档的讨论；段落评论会在正文旁打开。'}</p>
                   </div>
                   <span className="panel-route-pin" aria-hidden="true" />
                 </div>
@@ -2031,16 +2101,11 @@ function App(): React.ReactElement {
                     <div><strong>{activeAgentFeedback.label}</strong><small>{activeAgentFeedback.detail}</small></div>
                   </div>
                 ) : null}
-                {selectedRange && !activeThread && documentAction === null ? (
-                  <div className="selection-note">
-                    <span className="selection-pip" />评论将关联当前选区 · {selectedRange.end - selectedRange.start} 个字符
-                  </div>
-                ) : null}
                 {activeThread || documentAction === 'comment' ? <div className="composer">
                   <textarea
                     ref={commentInputRef}
                     className="composer-input"
-                    placeholder={activeThread ? '回复当前线程，可 @成员' : '写下整篇文档评论，可 @成员'}
+                    placeholder={activeThread ? '回复当前全局讨论，可 @成员' : '写下整篇文档评论，可 @成员'}
                     value={comment}
                     onFocus={() => {
                       preservePreviewSelectionRef.current = true;
@@ -2107,16 +2172,15 @@ function App(): React.ReactElement {
                     {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.displayName}</option>)}
                   </select>
                 ) : null}
-                <div className="panel-list-heading"><span>{activeRangeThread ? '当前段落与全局讨论' : '全局讨论'}</span><span>{globalThreads.length} 个全局线程{unresolvedRangeThreads.length ? ` · 历史范围 ${unresolvedRangeThreads.length}` : ''} · 待审 {pendingSuggestionCount}</span></div>
+                <div className="panel-list-heading"><span>全局讨论</span><span>{globalThreads.length} 个全局线程</span></div>
                 <div className="thread-list">
                   {visibleThreads.length ? visibleThreads.map((thread) => (
                     <div className={`thread-row ${thread.id === activeThreadId ? 'active' : ''}`} key={thread.id} onClick={() => setActiveThreadId(thread.id)}>
                       <div className="thread-row-head">
                         <span className={`state-chip ${thread.status}`}>{thread.status === 'open' ? '进行中' : '已解决'}</span>
                         <span className="thread-type">{thread.kind === 'task' ? '任务' : '讨论'}</span>
-                        {thread.scope.type === 'range' ? <span className={`thread-anchor${thread.scope.resolved?.status === 'detached' ? ' detached' : ''}`}>{thread.scope.resolved?.status === 'detached' ? '历史范围' : '范围评论'}</span> : null}
                       </div>
-                      {thread.messages.slice(0, 2).map((message) => (
+                      {thread.messages.slice().sort((left, right) => right.createdAt - left.createdAt).slice(0, 2).map((message) => (
                         <p key={message.id}>
                           <b>{workspaceMembers.find((member) => member.id === message.authorId)?.displayName ?? message.authorId}</b>
                           {message.status === 'withdrawn' ? <span className="withdrawn-copy">已撤回</span> : <span>{message.body}</span>}
@@ -2129,18 +2193,78 @@ function App(): React.ReactElement {
                   )) : <div className="empty-state"><span className="empty-route" aria-hidden="true" />还没有全局讨论<br /><small>从正文中选一段文字开始，讨论会显示在对应段落标记中。</small></div>}
                 </div>
                 {suggestionMessage ? <small className="suggestion-message" role="status">{suggestionMessage}</small> : null}
-                {unthreadedSuggestions.length ? (
-                  <div className="legacy-suggestion-group">
-                    <div className="panel-list-heading"><span>历史修改记录</span><span>{unthreadedSuggestions.length} 条</span></div>
-                    <p className="panel-help">这些记录来自旧版独立建议入口，后续新的 Agent 修改都会自动归入对应讨论线程。</p>
-                    <div className="suggestion-list">{unthreadedSuggestions.map((suggestion) => renderSuggestionCard(suggestion, true))}</div>
-                  </div>
-                ) : null}
               </>
             ) : null}
           </div>
         </aside>
       </section>
+      <Modal
+        open={rangeThread !== undefined}
+        title="段落讨论"
+        description="这段文字的评论、Agent 回复和修改记录会按最新时间显示在上方。"
+        variant="drawer"
+        className="range-thread-surface"
+        onClose={() => { setRangeThreadId(null); setSelectedRange(null); setComment(''); setMentionState(null); }}
+      >
+        {rangeThread ? (
+          <div className="range-thread-modal">
+            <div className="range-thread-quote">
+              <span>当前段落</span>
+              <blockquote>{(rangeThread.scope.type === 'range' ? (rangeThread.scope.anchor as AnchorPreview).quote : undefined) || '这段文字已被修改，原始引用暂不可见。'}</blockquote>
+            </div>
+            <div className="range-thread-toolbar">
+              <span>{rangeThread.status === 'open' ? '讨论进行中' : '讨论已解决'}</span>
+              <span>{rangeTimeline.length} 条记录 · 最新在上</span>
+            </div>
+            <div className="range-thread-timeline">
+              {rangeTimeline.length ? rangeTimeline.map((entry) => entry.kind === 'message' ? (
+                <article className="range-thread-message" key={entry.id}>
+                  <div className="range-thread-message-head">
+                    <strong>{workspaceMembers.find((member) => member.id === entry.message.authorId)?.displayName ?? entry.message.authorId}</strong>
+                    {entry.message.authorId === principalId && entry.message.status !== 'withdrawn' ? <button className="inline-withdraw-button" type="button" onClick={() => void withdrawMessage(entry.message.id)}>撤回</button> : null}
+                  </div>
+                  <p>{entry.message.status === 'withdrawn' ? <span className="withdrawn-copy">已撤回</span> : entry.message.body}</p>
+                </article>
+              ) : renderSuggestionCard(entry.suggestion)) : (
+                <div className="empty-state compact">还没有段落讨论，从下面开始添加第一条评论。</div>
+              )}
+            </div>
+            <div className="range-thread-composer composer">
+              <textarea
+                ref={commentInputRef}
+                className="composer-input"
+                placeholder="回复这段讨论，可 @成员或 Agent"
+                value={comment}
+                onChange={(event) => handleCommentChange(event.target.value, event.target.selectionStart ?? event.target.value.length)}
+                onKeyDown={handleCommentKeyDown}
+                onBlur={() => window.setTimeout(() => { if (document.activeElement !== commentInputRef.current) setMentionState(null); }, 0)}
+              />
+              {mentionCandidates.length > 0 ? (
+                <div className="mention-menu" role="listbox" aria-label="选择要提及的成员">
+                  {mentionCandidates.map((member, index) => (
+                    <button
+                      key={member.id}
+                      className={`mention-option ${index === mentionState?.index ? 'selected' : ''}`}
+                      type="button"
+                      role="option"
+                      aria-selected={index === mentionState?.index}
+                      onMouseDown={(event) => event.preventDefault()}
+                      onClick={() => insertMention(member)}
+                    >
+                      <span className="avatar">{member.displayName.slice(0, 1)}</span>
+                      <span className="mention-option-copy"><strong>{member.displayName}</strong><small>{member.kind === 'agent' ? 'Agent' : member.handle ? `@${member.handle}` : '成员'}</small></span>
+                    </button>
+                  ))}
+                </div>
+              ) : null}
+              <div className="composer-footer">
+                <span className="range-thread-hint">回复会留在这段文字下面</span>
+                <button className="action-button primary send-button" type="button" onClick={() => void sendRangeMessage()} disabled={!comment.trim()}>回复<span className="send-arrow" aria-hidden="true">↗</span></button>
+              </div>
+            </div>
+          </div>
+        ) : null}
+      </Modal>
       <Modal
         open={showNewWorkspace}
         title="新建项目"

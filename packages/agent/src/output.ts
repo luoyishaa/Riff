@@ -1,4 +1,5 @@
 import { err, type Result } from '@collab/kernel';
+import { preservesMarkdownStructure } from '@collab/review';
 import { z } from 'zod';
 import type { AgentEdit } from './types.js';
 
@@ -81,7 +82,7 @@ export interface LocatedEdit extends AgentEdit {
 
 export interface ValidatedEdits {
   edits: LocatedEdit[];
-  rejected: Array<{ index: number; reason: 'not-found' | 'ambiguous' | 'overlap' }>;
+  rejected: Array<{ index: number; reason: 'not-found' | 'ambiguous' | 'overlap' | 'structure' }>;
   truncated: number;
 }
 
@@ -112,6 +113,10 @@ function validateEditList(source: AgentEdit[], allowedText: string, maxEdits: nu
     });
     if (candidates.length === 0) { rejected.push({ index, reason: 'not-found' }); continue; }
     if (candidates.length !== 1) { rejected.push({ index, reason: 'ambiguous' }); continue; }
+    if ((edit.op === 'replace' || edit.op === 'delete') && !preservesMarkdownStructure(edit.quote, edit.op === 'delete' ? '' : edit.newText)) {
+      rejected.push({ index, reason: 'structure' });
+      continue;
+    }
     const start = candidates[0] as number;
     const end = start + edit.quote.length;
     const overlaps = edits.some((existing) => start < existing.end && existing.start < end);

@@ -28,6 +28,35 @@ describe('agent protocol', () => {
     expect(result.text).not.toContain('内部草稿');
     expect(result.text).not.toContain('旧讨论');
   });
+
+  it('rejects edits that remove Markdown structure markers', () => {
+    const cases = [
+      { name: 'heading', quote: '# 标题', newText: '标题' },
+      { name: 'list', quote: '- 列表项', newText: '列表项' },
+      { name: 'fenced code', quote: '```ts\nconst value = 1;\n```', newText: 'const value = 2;' },
+      { name: 'blockquote', quote: '> 引用内容', newText: '引用内容' },
+      { name: 'table', quote: '| A | B |\n| --- | --- |', newText: 'A 和 B' },
+      { name: 'thematic break', quote: '---', newText: '' },
+    ];
+    for (const testCase of cases) {
+      const parsed = parseAgentOutput(JSON.stringify({ reply: 'ok', edits: [{ op: 'replace', quote: testCase.quote, newText: testCase.newText }] }));
+      expect(parsed.ok, testCase.name).toBe(true);
+      if (!parsed.ok) continue;
+      expect(validateEdits(parsed.value, testCase.quote).rejected, testCase.name).toContainEqual({ index: 0, reason: 'structure' });
+    }
+    const deleteOutput = parseAgentOutput(JSON.stringify({ reply: 'ok', edits: [{ op: 'delete', quote: '- 保留列表结构' }] }));
+    expect(deleteOutput.ok).toBe(true);
+    if (deleteOutput.ok) expect(validateEdits(deleteOutput.value, '- 保留列表结构').rejected).toContainEqual({ index: 0, reason: 'structure' });
+  });
+
+  it('allows content changes that keep Markdown structure markers', () => {
+    const quote = '# 新标题\n\n- 原列表项\n\n> 原引用\n\n```ts\nconst value = 1;\n```\n\n| A | B |\n| --- | --- |';
+    const newText = '# 更新标题\n\n- 更新列表项\n\n> 更新引用\n\n```ts\nconst value = 2;\n```\n\n| C | D |\n| --- | --- |';
+    const parsed = parseAgentOutput(JSON.stringify({ reply: 'ok', edits: [{ op: 'replace', quote, newText }] }));
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(validateEdits(parsed.value, quote).edits).toHaveLength(1);
+  });
 });
 
 describe('context', () => {
@@ -148,6 +177,23 @@ describe('runner and dispatcher', () => {
     });
     expect(result.edits).toHaveLength(0);
     expect(result.reply).toContain('未生成可审批修改建议');
+  });
+
+  it('explains when a proposed edit would remove Markdown structure', async () => {
+    const runs = new MemoryAgentRunRepository();
+    const runner = new AgentRunner({
+      clock: { now: () => 100 }, ids: { next: () => 'run-structure' }, runs,
+      controls: { start: () => ({ signal: new AbortController().signal, timedOut: () => false, cancel: () => undefined }) },
+    });
+    const result = await runner.run({
+      agentId: 'agent', docId: 'doc', threadId: 'thread',
+      requester: { id: 'alice', kind: 'human', displayName: 'Alice' }, requesterRole: 'editor', grantedRole: 'editor',
+      strategy: 'selection', adapter: { id: 'test', run: async () => ({ text: JSON.stringify({ reply: '我来修改标题。', edits: [{ op: 'replace', quote: '# 标题', newText: '标题' }] }) }) },
+      prompt: { system: '', user: 'rewrite' }, inputChars: 20, allowedText: '# 标题',
+    });
+    expect(result.edits).toHaveLength(0);
+    expect(result.reply).toContain('Markdown 结构');
+    expect(result.reply).toContain('请保留对应结构标记');
   });
 
   it('returns selected and cross-document consistency suggestions as separate validated edits', async () => {

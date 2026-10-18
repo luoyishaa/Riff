@@ -129,6 +129,19 @@ describe('review domain', () => {
     expect(doc.getText()).toBe('GAMMA');
   });
 
+  it('rejects a pending revision that would remove Markdown structure', () => {
+    const { doc, service } = setup('# 结论\n\n原文');
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const created = service.createSuggestion({ docId: 'doc-1', authorId: 'agent', anchor: anchor.value, newText: '新标题' });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(service.updateSuggestion({ suggestionId: created.value.suggestion.id, newText: '丢失标记', editorId: 'alice', editorRole: 'editor' }).error).toBe('structure-loss');
+    expect(service.acceptSuggestion('doc-1', created.value.suggestion.id, 'alice', 'editor').error).toBe('structure-loss');
+    expect(doc.getText()).toBe('# 结论\n\n原文');
+  });
+
   it('keeps suggestion revision behind approval permission and pending state', () => {
     const { service } = setup('ALPHA');
     const anchor = service.createAnchor('doc-1', 0, 5);

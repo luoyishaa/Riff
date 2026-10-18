@@ -276,3 +276,17 @@
 - 偏离与决定：底层 Suggestion 仍是 Agent 生成的可审批差异，不再作为用户从正文直接发起的第二种入口；决定已写入 `docs/decisions.md`。范围线程的未读持久化和版本回滚尚未实现，当前先保留正文标记和已有撤回/审批生命周期。
 - 已知问题：多个重叠范围标记在同一段源码上的显示仍由 CodeMirror/预览的标记合并规则决定；完整的未读红点、线程读取记录和多版本回滚需要补充存储模型，不能用前端临时状态冒充。
 - 下一步建议：发布前用真实 Agent 任务验证“评论 → Agent 回复 → 线程内修改 → 接受/拒绝”全链路，并补充范围线程的读取状态和历史版本设计。
+
+### M40 报告：范围线程独立弹窗与全局评论面板
+- 完成情况：✅ 右侧协作面板只展示当前文档的 document-scope 全局讨论，不再混入当前段落或历史范围线程；✅ 点击正文范围标记后打开独立的右侧段落讨论抽屉；✅ 抽屉把评论消息与 Agent 修改建议合并为统一时间线，按最新创建时间倒序显示；✅ 段落线程继续支持 @成员 / Agent、回复、修改建议编辑、接受、拒绝和撤回；✅ 全局评论仍可在右侧面板发起和回复。
+- 如何验证：`corepack pnpm typecheck`；`corepack pnpm lint`；`corepack pnpm --filter @collab/web build`；Chrome 检查右侧面板标题为“全局评论”，并确认选区入口不再把范围线程插入右侧列表。
+- 偏离与决定：范围线程展示层从右侧面板移到正文标记触发的独立抽屉，决定已写入 `docs/decisions.md`；detached 范围记录暂不在右侧伪装成当前段落，待后续增加独立历史范围入口。
+- 已知问题：当前段落抽屉沿用现有范围标记，尚未为没有历史讨论的任意段落增加空线程入口；跨段 Agent `relatedEdits` 仍复用触发线程的 threadId，复杂重叠标记的点击优先级仍需单独的关联模型。
+- 下一步建议：用真实 Agent 任务覆盖 A 段触发、B 段关联修改、B 段标记打开和审批，随后补充未读状态与版本回退。
+
+### M41 报告：Markdown 结构保护与建议版本回退
+- 完成情况：✅ Agent 输出校验和 review 审批共用结构保护规则，防止替换/删除吞掉标题、列表、引用、代码围栏、表格和分隔线；✅ 结构校验只比较 Markdown 语法标记的形状与顺序，允许标题改名和块内内容编辑；✅ 每次接受建议前保存不可变全文快照，新增版本列表与 editor/owner 恢复接口；✅ 前端在已接受建议旁提供“恢复到这次修改前”，并在失败时明确提示可能是结构保护或锚点失效。
+- 如何验证：`corepack pnpm check`（15 个测试文件、78 个测试通过，边界检查通过）；`corepack pnpm --filter @collab/web build`；`corepack pnpm exec vitest run packages/agent/test/agent.test.ts`（18 tests）；`corepack pnpm exec vitest run packages/review/test/review.test.ts`（14 tests）。
+- 偏离与决定：Markdown 结构保护放在 review 纯逻辑层并由 agent 复用，避免 UI 或某个标题特例；版本快照采用接受前全文状态，恢复通过现有 Yjs/WebSocket/local-project 链路广播。详见 `docs/decisions.md`。
+- 已知问题：历史数据在版本快照功能上线前没有可恢复快照；完整 CommonMark/GFM 语法仍按 M37 的轻量子集处理。当前版本列表按文档返回，范围抽屉优先显示与当前建议关联的回退入口。
+- 下一步建议：重启本地服务后，用一个包含标题、列表、表格和代码块的真实 Markdown 文档执行“评论 → Agent 建议 → 接受 → 恢复”回归，确认结构保护和跨客户端同步。

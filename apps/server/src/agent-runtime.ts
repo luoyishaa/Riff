@@ -51,6 +51,7 @@ export const AGENT_SYSTEM_PROMPT = [
   '每个 edit 必须使用字段 op、quote、newText，可选 contextBefore、contextAfter、rationale；op 只能是 replace、delete 或 insert。replace 必须把 quote 逐字替换为 newText。不要使用 replacement、oldText、changes 或其他字段名。',
   '始终只返回一个合法 JSON 对象，字段为 reply（字符串）、edits（数组）和 relatedEdits（数组，可为空）；不要输出 Markdown、代码围栏或额外文字。',
   '修改必须限定在允许区域，保持原文语言。',
+  '如果引用包含 Markdown 标题、列表、引用、代码围栏、表格或分隔线，newText 必须保留相同顺序和结构标记，只改其中的内容；不要把结构行吞掉。',
 ].join('\n');
 
 interface AgentListItem {

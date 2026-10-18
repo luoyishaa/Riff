@@ -495,6 +495,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .suggestion-edit-form label { color: var(--muted); font-size: 10px; }
 .suggestion-edit-form textarea { width: 100%; min-height: 60px; padding: 7px 8px; color: var(--ink); background: var(--paper-light); border: 1px solid var(--line); border-radius: 4px; font: inherit; font-size: 11px; line-height: 1.5; resize: vertical; }
 .row-actions { display: flex; gap: 5px; margin-top: 10px; }
+.version-actions { align-items: center; gap: 10px; }
+.version-actions small { color: var(--muted); }
 .suggestion-row.accepted, .suggestion-row.rejected, .suggestion-row.stale { opacity: .8; }
 .suggestion-row.withdrawn { opacity: .65; }
 .thread-suggestion { margin: 10px 0 0 14px; padding: 9px 10px; background: #f8f4ee; border-left: 2px solid #7966a8; }
@@ -687,6 +689,22 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .invitation-card-copy span { color: var(--muted); font-size: 10px; line-height: 1.5; }
 .member-inbox { display: grid; gap: 10px; }
 .drawer-surface .modal-body { padding-bottom: 32px; }
+.range-thread-surface { width: min(600px, 100%); }
+.range-thread-surface .modal-body { display: flex; min-height: 0; overflow: hidden; padding: 0; }
+.range-thread-modal { display: flex; min-height: 0; flex: 1; flex-direction: column; }
+.range-thread-quote { padding: 17px 22px 13px; background: var(--paper); border-bottom: 1px solid var(--line-soft); }
+.range-thread-quote > span { color: var(--muted); font-size: 10px; font-weight: 700; letter-spacing: .04em; }
+.range-thread-quote blockquote { margin: 7px 0 0; padding-left: 10px; color: var(--ink-soft); border-left: 2px solid var(--accent); font-size: 12px; line-height: 1.6; }
+.range-thread-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; padding: 10px 22px; color: var(--muted); border-bottom: 1px solid var(--line-soft); font-size: 10px; }
+.range-thread-toolbar span:first-child { color: var(--accent-dark); font-weight: 700; }
+.range-thread-timeline { min-height: 0; flex: 1; overflow: auto; padding: 13px 22px 19px; }
+.range-thread-message { margin: 0 0 12px; padding: 11px 12px; background: var(--paper); border: 1px solid var(--line-soft); border-radius: 5px; }
+.range-thread-message-head { display: flex; align-items: center; gap: 7px; color: var(--ink); font-size: 11px; }
+.range-thread-message-head .inline-withdraw-button { margin-left: auto; }
+.range-thread-message p { margin: 7px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.65; white-space: pre-wrap; overflow-wrap: anywhere; }
+.range-thread-composer { flex: 0 0 auto; margin: 0 22px 19px; box-shadow: 0 -8px 18px rgba(51, 37, 27, .04); }
+.range-thread-composer .composer-footer { align-items: center; }
+.range-thread-hint { color: var(--muted); font-size: 10px; }
 @keyframes modal-enter { from { opacity: 0; transform: translateY(8px) scale(.985); } to { opacity: 1; transform: translateY(0) scale(1); } }
 @keyframes drawer-enter { from { opacity: 0; transform: translateX(18px); } to { opacity: 1; transform: translateX(0); } }
 @media (prefers-reduced-motion: reduce) {

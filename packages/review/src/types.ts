@@ -130,7 +130,8 @@ export type ReviewError =
   | 'stale-anchor'
   | 'detached-anchor'
   | 'range-out-of-bounds'
-  | 'version-not-found';
+  | 'version-not-found'
+  | 'structure-loss';
 
 export interface CreateThreadInput {
   docId: string;

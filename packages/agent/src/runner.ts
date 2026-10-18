@@ -138,7 +138,10 @@ export class AgentRunner {
     let reply = parsed.value.reply;
     const discardedEdits = validated.rejected.length + validated.truncated + related.rejected.length + related.truncated;
     if (discardedEdits > 0) {
-      reply += `\n${discardedEdits} edit(s) could not be located or were discarded.`;
+      const structureRejected = [...validated.rejected, ...related.rejected].filter((rejection) => rejection.reason === 'structure').length;
+      const otherDiscarded = discardedEdits - structureRejected;
+      if (structureRejected > 0) reply += `\n${structureRejected} 条修改因会破坏 Markdown 结构（标题、列表、代码围栏、引用或表格）未提交；请保留对应结构标记后重试。`;
+      if (otherDiscarded > 0) reply += `\n${otherDiscarded} 条修改无法定位或已被丢弃。`;
       if (validated.edits.length === 0) reply += '\n未生成可审批修改建议；请检查引用是否完整位于选区内，然后重试。';
     }
     const edits = role === 'commenter' ? [] : [...validated.edits, ...related.edits];

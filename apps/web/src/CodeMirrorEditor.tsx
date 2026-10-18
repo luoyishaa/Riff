@@ -29,6 +29,15 @@ export interface CodeMirrorEditorProps {
 
 const remoteTransaction = StateEffect.define<boolean>();
 
+function reviewMarkerIdFromTarget(target: EventTarget | null): string | null {
+  const element = target instanceof Element
+    ? target
+    : target instanceof Node
+      ? target.parentElement
+      : null;
+  return element?.closest<HTMLElement>('[data-review-id]')?.dataset.reviewId ?? null;
+}
+
 /**
  * A small React wrapper around CodeMirror's stateful editor. The document value
  * remains owned by the parent (and, in this app, by Yjs); local transactions
@@ -60,6 +69,7 @@ export function CodeMirrorEditor({
   const editableCompartmentRef = useRef<Compartment | null>(null);
   const markerCompartmentRef = useRef<Compartment | null>(null);
   const onReviewMarkerClickRef = useRef(onReviewMarkerClick);
+  const reviewMarkersRef = useRef(reviewMarkers);
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
   const [sourceMenu, setSourceMenu] = useState<{ top: number; left: number } | null>(null);
   const [sourceComposer, setSourceComposer] = useState<{ top: number; left: number } | null>(null);
@@ -69,6 +79,7 @@ export function CodeMirrorEditor({
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
   onReviewMarkerClickRef.current = onReviewMarkerClick;
+  reviewMarkersRef.current = reviewMarkers;
   valueRef.current = value;
 
   useEffect(() => {
@@ -106,17 +117,6 @@ export function CodeMirrorEditor({
           '.cm-selectionBackground, ::selection': { backgroundColor: '#ead1ca !important' },
           '&.cm-focused': { outline: 'none' },
         }),
-        EditorView.domEventHandlers({
-          click: (event) => {
-            const target = event.target;
-            if (!(target instanceof Element)) return false;
-            const marker = target.closest<HTMLElement>('[data-review-id]');
-            const markerId = marker?.dataset.reviewId;
-            if (!markerId) return false;
-            onReviewMarkerClickRef.current?.(markerId);
-            return true;
-          },
-        }),
         // A marker lets the listener distinguish a parent/Yjs update from a
         // user edit. It is deliberately a transaction effect, not a global
         // mutable flag, so updates remain safe when transactions are queued.
@@ -151,6 +151,22 @@ export function CodeMirrorEditor({
     const view = new EditorView({ state: editorState, parent: editorHost });
     viewRef.current = view;
 
+    // CodeMirror's event delegation can receive a text node as the target and
+    // does not guarantee that a mark's DOM attributes are visible to a child
+    // handler. Capture the click at the editor host instead so every marked
+    // range remains an explicit entry point into its discussion thread.
+    const handleReviewMarkerClick = (event: MouseEvent) => {
+      const directMarkerId = reviewMarkerIdFromTarget(event.target);
+      const position = directMarkerId === null ? view.posAtCoords({ x: event.clientX, y: event.clientY }) : null;
+      const markerId = directMarkerId ?? (position === null ? null : reviewMarkersRef.current
+        .filter((marker) => marker.start <= position && position < marker.end)
+        .sort((left, right) => (left.end - left.start) - (right.end - right.start))[0]?.id ?? null);
+      if (!markerId) return;
+      onReviewMarkerClickRef.current?.(markerId);
+      event.stopPropagation();
+    };
+    editorHost.addEventListener('click', handleReviewMarkerClick, true);
+
     const pane = sourcePaneRef.current;
     const beginPointerSelection = (event: PointerEvent) => {
       const target = event.target;
@@ -183,6 +199,7 @@ export function CodeMirrorEditor({
     document.addEventListener('pointerup', finishPointerSelection);
 
     return () => {
+      editorHost.removeEventListener('click', handleReviewMarkerClick, true);
       pane?.removeEventListener('pointerdown', beginPointerSelection);
       document.removeEventListener('pointerup', finishPointerSelection);
       pointerSelectingRef.current = false;

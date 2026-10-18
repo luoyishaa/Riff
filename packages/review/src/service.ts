@@ -13,6 +13,7 @@ import {
 } from '@collab/kernel';
 import { approvalDecision } from './policy.js';
 import { decideBatchRemaining, getBatchProgress } from './batch.js';
+import { preservesMarkdownStructure } from './structure.js';
 import type { ReviewRepository } from './repository.js';
 import type {
   AddMessageInput,
@@ -265,6 +266,7 @@ export class ReviewService {
       notify(this.options, { type: 'suggestion.updated', suggestion: stale });
       return err('stale-anchor');
     }
+    if (!preservesMarkdownStructure(resolution.anchor.quote, suggestion.newText)) return err('structure-loss');
     const accepted: Suggestion = {
       ...suggestion,
       status: 'accepted',
@@ -325,6 +327,7 @@ export class ReviewService {
     const suggestion = this.options.repository.getSuggestion(input.suggestionId);
     if (!suggestion) return err('suggestion-not-found');
     if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) return err('invalid-state');
+    if (!preservesMarkdownStructure(suggestion.anchor.quote, input.newText)) return err('structure-loss');
     const updated: Suggestion = { ...suggestion, newText: input.newText };
     this.options.repository.saveSuggestion(updated);
     notify(this.options, { type: 'suggestion.updated', suggestion: updated });
