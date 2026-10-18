@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { Compartment, EditorState, StateEffect } from '@codemirror/state';
 import { EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-import { MarkdownPreview } from './MarkdownPreview.js';
+import { MarkdownPreview, type MarkdownPreviewAction, type MarkdownPreviewSelection } from './MarkdownPreview.js';
 
 export type EditorSelection = { start: number; end: number };
 
@@ -11,6 +11,9 @@ export interface CodeMirrorEditorProps {
   editable: boolean;
   onChange: (value: string) => void;
   onSelectionChange?: (selection: EditorSelection) => void;
+  onPreviewSelectionChange?: (selection: MarkdownPreviewSelection | null) => void;
+  onPreviewAction?: (action: MarkdownPreviewAction) => void;
+  onViewModeChange?: (mode: 'source' | 'preview') => void;
   className?: string;
   /** Markdown documents expose a preview while plain text remains source-only. */
   documentKind?: 'text' | 'markdown';
@@ -29,6 +32,9 @@ export function CodeMirrorEditor({
   editable,
   onChange,
   onSelectionChange,
+  onPreviewSelectionChange,
+  onPreviewAction,
+  onViewModeChange,
   className,
   documentKind = 'text',
 }: CodeMirrorEditorProps): React.ReactElement {
@@ -131,7 +137,7 @@ export function CodeMirrorEditor({
             type="button"
             className={`document-editor-view-button${viewMode === 'source' ? ' selected' : ''}`}
             aria-pressed={viewMode === 'source'}
-            onClick={() => setViewMode('source')}
+            onClick={() => { setViewMode('source'); onViewModeChange?.('source'); }}
           >
             源码
           </button>
@@ -139,7 +145,7 @@ export function CodeMirrorEditor({
             type="button"
             className={`document-editor-view-button${viewMode === 'preview' ? ' selected' : ''}`}
             aria-pressed={viewMode === 'preview'}
-            onClick={() => setViewMode('preview')}
+            onClick={() => { setViewMode('preview'); onViewModeChange?.('preview'); }}
           >
             预览
           </button>
@@ -150,7 +156,11 @@ export function CodeMirrorEditor({
       </div>
       {isMarkdown ? (
         <div className={`document-editor-pane document-editor-preview-pane${viewMode === 'source' ? ' is-hidden' : ''}`} aria-hidden={viewMode === 'source'}>
-          <MarkdownPreview value={value} />
+          <MarkdownPreview
+            value={value}
+            {...(onPreviewSelectionChange ? { onSelectionChange: onPreviewSelectionChange } : {})}
+            {...(onPreviewAction ? { onAction: onPreviewAction } : {})}
+          />
         </div>
       ) : null}
     </div>

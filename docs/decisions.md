@@ -34,6 +34,8 @@
 - 2026-10-17：本地项目同步结果必须区分更新、冲突和本地缺失；前端同步提示现在列出冲突文件并说明不会覆盖或删除，避免把保护性阻止误报成“已同步”。
 - 2026-10-17：在线成员以文档 WebSocket 的实际连接集合为准，不再把全部可见成员当成在线；当前账户最近打开的项目按 principal id 保存在浏览器本地，刷新后优先恢复仍有权限的项目。
 - 2026-10-17：大纲随正文变化做轻量防抖刷新；建议导航角标只表示 pending 数量，历史记录在队列标题中单独展示，避免把已处理建议误报成待审批。
+- 2026-10-18：Markdown 文档的大纲只从 ATX `#` 到 `######` 标题生成并携带 level，TXT 继续按空行分隔段落；Markdown 预览的可见文字选区映射回源码偏移并用浮窗触发评论/建议，避免把格式标记当成评论锚点。
+- 2026-10-18：评论输入框的 `@` 补全只从当前空间可见成员和 Agent 生成候选，插入仍使用现有显示名 mention 协议，键盘导航不改变服务端消息格式。
 - 2026-10-17：ChatGPT 订阅授权使用官方 Sign in with ChatGPT 的 Responses API token；新增独立 `openai-responses` 适配器并把 token 限制在服务进程内存，避免把 OAuth token 当作 Chat Completions API key 或写入 SQLite。
 
 - 2026-10-17：ChatGPT Agent 采用官方 Sign in with ChatGPT 开源本地流程。首次授权使用 `dynamic_agent_client`，回调得到的 issued client ID 单独保存；每个本地主体可有多个 ChatGPT profile。使用 PKCE、state、nonce、loopback callback，ID token 通过 OpenAI JWKS 校验，令牌保存在本机凭据文件而不是 SQLite、浏览器或日志。`chatgpt.tokens.use.direct` 未获授权时只保留身份，不允许发起计划额度推理。依据：https://developers.openai.com/siwc/token-sharing-open-source/sign-in。

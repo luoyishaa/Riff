@@ -8,6 +8,7 @@ chatgpt-oauth.json
 coverage/
 paper-pal/
 *.tsbuildinfo
+*.log
 *.docx
 毕设*.txt
 .acceptance-fixture/

@@ -52,7 +52,7 @@ type LocalDirectoryHandle = {
 type DirectoryPickerWindow = Window & {
   showDirectoryPicker?: () => Promise<LocalDirectoryHandle>;
 };
-type OutlineEntry = { index: number; title: string; start: number; end: number };
+type OutlineEntry = { index: number; title: string; start: number; end: number; level?: number };
 type Workspace = {
   id: string;
   title: string;
@@ -112,6 +112,7 @@ type Suggestion = {
   status: 'pending' | 'accepted' | 'rejected' | 'stale';
 };
 type Selection = { start: number; end: number };
+type MentionState = { start: number; end: number; index: number };
 type AnchorPreview = { quote?: string };
 type Agent = AgentSummary;
 
@@ -482,7 +483,9 @@ function App(): React.ReactElement {
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [selectedRange, setSelectedRange] = useState<Selection | null>(null);
+  const [editorViewMode, setEditorViewMode] = useState<'source' | 'preview'>('source');
   const [comment, setComment] = useState('');
+  const [mentionState, setMentionState] = useState<MentionState | null>(null);
   const [newText, setNewText] = useState('');
   const [asTask, setAsTask] = useState(false);
   const [assignedAgentId, setAssignedAgentId] = useState('');
@@ -547,6 +550,7 @@ function App(): React.ReactElement {
   const invitationInboxTriggerRef = useRef<HTMLButtonElement | null>(null);
   const agentConfigTriggerRef = useRef<HTMLButtonElement | null>(null);
   const projectSettingsTriggerRef = useRef<HTMLButtonElement | null>(null);
+  const commentInputRef = useRef<HTMLTextAreaElement | null>(null);
   const localDirectoryHandleRef = useRef<LocalDirectoryHandle | null>(null);
   const localFileHandlesRef = useRef<Map<string, LocalFileHandle>>(new Map());
   const localDocumentPathsRef = useRef<Map<string, string>>(new Map());
@@ -780,6 +784,7 @@ function App(): React.ReactElement {
     const detail = await request<WorkspaceDetail>(`/api/workspaces/${workspaceId}`, { headers });
     if (!detail) return;
     setWorkspaceDetail(detail);
+    setMembers(detail.members);
     setDocs(detail.documents);
     setWorkspaces((current) => current.map((item) => item.id === detail.id ? { ...item, documents: detail.documents } : item));
     setDoc((selected) => selected && detail.documents.some((item) => item.id === selected.id) ? selected : (detail.documents[0] ?? null));
@@ -970,6 +975,12 @@ function App(): React.ReactElement {
   const workspaceRole = workspaceDetail?.role ?? workspaces.find((item) => item.id === workspaceId)?.role ?? role;
   const canSyncLocalProject = Boolean(localProject) && (localProject?.source === 'local' ? ['editor', 'owner'].includes(workspaceRole) : workspaceRole === 'owner');
   const workspaceMembers = workspaceDetail?.members ?? members;
+  const mentionCandidates = mentionState ? workspaceMembers.filter((member) => {
+    const input = comment.slice(mentionState.start + 1, mentionState.end).trim().toLocaleLowerCase();
+    if (!input) return true;
+    return member.displayName.toLocaleLowerCase().startsWith(input)
+      || member.handle?.toLocaleLowerCase().startsWith(input);
+  }).slice(0, 8) : [];
   const currentPrincipal = principals.find((principal) => principal.id === principalId);
   const canCreateWorkspace = currentPrincipal?.kind === 'human';
   const fileTree = buildFileTree(docs, localProject);
@@ -1010,6 +1021,65 @@ function App(): React.ReactElement {
     </React.Fragment>
   ));
   const activeThread = threads.find((thread) => thread.id === activeThreadId);
+  const updateMentionState = (value: string, caret: number) => {
+    const beforeCaret = value.slice(0, caret);
+    const match = beforeCaret.match(/(?:^|[^\p{L}\p{N}_])@([^\n]*)$/u);
+    if (!match) {
+      setMentionState(null);
+      return;
+    }
+    const query = match[1] ?? '';
+    const start = caret - query.length - 1;
+    const previous = value[start - 1];
+    if (previous && /[\p{L}\p{N}_]/u.test(previous)) {
+      setMentionState(null);
+      return;
+    }
+    setMentionState({ start, end: caret, index: 0 });
+  };
+  const insertMention = (member: Principal) => {
+    if (!mentionState) return;
+    const inserted = `@${member.displayName} `;
+    const next = `${comment.slice(0, mentionState.start)}${inserted}${comment.slice(mentionState.end)}`;
+    const caret = mentionState.start + inserted.length;
+    setComment(next);
+    setMentionState(null);
+    window.requestAnimationFrame(() => {
+      const input = commentInputRef.current;
+      input?.focus();
+      input?.setSelectionRange(caret, caret);
+    });
+  };
+  const handleCommentChange = (value: string, caret: number) => {
+    setComment(value);
+    updateMentionState(value, caret);
+  };
+  const handleCommentKeyDown = (event: React.KeyboardEvent<HTMLTextAreaElement>) => {
+    if (!mentionState || mentionCandidates.length === 0) {
+      if (event.key === 'Escape') setMentionState(null);
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      setMentionState((current) => {
+        if (!current) return current;
+        const offset = event.key === 'ArrowDown' ? 1 : -1;
+        const index = (current.index + offset + mentionCandidates.length) % mentionCandidates.length;
+        return { ...current, index };
+      });
+      return;
+    }
+    if (event.key === 'Enter' || event.key === 'Tab') {
+      event.preventDefault();
+      const candidate = mentionCandidates[mentionState.index] ?? mentionCandidates[0];
+      if (candidate) insertMention(candidate);
+      return;
+    }
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      setMentionState(null);
+    }
+  };
   const createComment = async () => {
     if (!doc || !comment.trim()) return;
     const scope = selectedRange
@@ -1031,6 +1101,7 @@ function App(): React.ReactElement {
       body: JSON.stringify({ body: comment }),
     });
     setComment('');
+    setMentionState(null);
     setActiveThreadId(thread.id);
     setTab('comments');
     await reloadReview(doc.id);
@@ -1043,6 +1114,7 @@ function App(): React.ReactElement {
       body: JSON.stringify({ body: comment }),
     });
     setComment('');
+    setMentionState(null);
     await reloadReview(activeThread.docId);
   };
   const createSuggestion = async () => {
@@ -1643,13 +1715,13 @@ function App(): React.ReactElement {
             {outlineEntries.length ? (
               <nav className="outline-list" aria-label="文档大纲">
                 {outlineEntries.map((entry) => (
-                  <button className="outline-item" key={`${entry.index}-${entry.start}`} type="button" title={`定位到第 ${entry.index} 段`} onClick={() => setSelectedRange({ start: entry.start, end: entry.end })}>
+                  <button className="outline-item" key={`${entry.index}-${entry.start}`} type="button" title={currentDocumentKind === 'markdown' && entry.level ? `定位到第 ${entry.level} 级标题` : `定位到第 ${entry.index + 1} 段`} style={entry.level ? { paddingLeft: `${8 + Math.max(0, entry.level - 1) * 12}px` } : undefined} onClick={() => setSelectedRange({ start: entry.start, end: entry.end })}>
                     <span>{String(entry.index).padStart(2, '0')}</span>
                     <strong>{entry.title}</strong>
                   </button>
                 ))}
               </nav>
-            ) : <div className="empty-state compact">正文中还没有可识别的段落</div>}
+            ) : <div className="empty-state compact">{currentDocumentKind === 'markdown' ? '正文中还没有分级标题' : '正文中还没有可识别的段落'}</div>}
           </div>
           <div className="sidebar-section member-section">
             <div className="section-heading">
@@ -1732,22 +1804,26 @@ function App(): React.ReactElement {
             </div>
           </div>
           <div className="editor-toolbar">
-            <div className="toolbar-actions">
-              <button
-                className="action-button primary"
-                disabled={!selectedRange || !['commenter', 'suggester', 'editor', 'owner'].includes(role)}
-                onClick={() => setTab('comments')}
-              >
-                <span className="button-glyph comment-glyph" aria-hidden="true" />评论选区
-              </button>
-              <button
-                className="action-button"
-                disabled={!selectedRange || !['suggester', 'editor', 'owner'].includes(role)}
-                onClick={() => setTab('suggestions')}
-              >
-                <span className="button-glyph edit-glyph" aria-hidden="true" />建议修改
-              </button>
-            </div>
+            {currentDocumentKind === 'markdown' && editorViewMode === 'preview' ? (
+              <span className="toolbar-context">在预览中选中文字后，使用选区浮窗开始协作</span>
+            ) : (
+              <div className="toolbar-actions">
+                <button
+                  className="action-button primary"
+                  disabled={!selectedRange || !['commenter', 'suggester', 'editor', 'owner'].includes(role)}
+                  onClick={() => setTab('comments')}
+                >
+                  <span className="button-glyph comment-glyph" aria-hidden="true" />评论选区
+                </button>
+                <button
+                  className="action-button"
+                  disabled={!selectedRange || !['suggester', 'editor', 'owner'].includes(role)}
+                  onClick={() => setTab('suggestions')}
+                >
+                  <span className="button-glyph edit-glyph" aria-hidden="true" />建议修改
+                </button>
+              </div>
+            )}
             <div className={`selection-status ${selectedRange ? 'has-selection' : ''}`}>
               <span className="selection-pip" aria-hidden="true" />
               {selectedRange ? (
@@ -1779,6 +1855,13 @@ function App(): React.ReactElement {
                   }),
                 );
               }}
+              onPreviewSelectionChange={(selection) => {
+                setSelectedRange(selection && selection.start < selection.end ? selection : null);
+              }}
+              onPreviewAction={(action) => {
+                setTab(action === 'comment' ? 'comments' : 'suggestions');
+              }}
+              onViewModeChange={setEditorViewMode}
             />
           </div>
           <div className="editor-statusbar">
@@ -1823,11 +1906,35 @@ function App(): React.ReactElement {
                 ) : null}
                 <div className="composer">
                   <textarea
+                    ref={commentInputRef}
                     className="composer-input"
                     placeholder={activeThread ? '回复当前线程，可 @成员' : '写下评论，可 @成员'}
                     value={comment}
-                    onChange={(event) => setComment(event.target.value)}
+                    onChange={(event) => handleCommentChange(event.target.value, event.target.selectionStart ?? event.target.value.length)}
+                    onKeyDown={handleCommentKeyDown}
+                    onBlur={() => { window.setTimeout(() => { if (document.activeElement !== commentInputRef.current) setMentionState(null); }, 0); }}
                   />
+                  {mentionCandidates.length > 0 ? (
+                    <div className="mention-menu" role="listbox" aria-label="选择要提及的成员">
+                      {mentionCandidates.map((member, index) => (
+                        <button
+                          key={member.id}
+                          className={`mention-option ${index === mentionState?.index ? 'selected' : ''}`}
+                          type="button"
+                          role="option"
+                          aria-selected={index === mentionState?.index}
+                          onMouseDown={(event) => event.preventDefault()}
+                          onClick={() => insertMention(member)}
+                        >
+                          <span className="avatar">{member.displayName.slice(0, 1)}</span>
+                          <span className="mention-option-copy">
+                            <strong>{member.displayName}</strong>
+                            <small>{member.kind === 'agent' ? 'Agent' : member.handle ? `@${member.handle}` : '成员'}</small>
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  ) : null}
                   <div className="composer-footer">
                     {!activeThread ? (
                       <label className="task-toggle">
@@ -2068,10 +2175,12 @@ function App(): React.ReactElement {
           allowCreate={!agentConfigFocusId}
           onOpenProviders={() => setShowModelProviders(true)}
           onUpdated={() => {
-            if (doc)
-              void request<Agent[]>(`/api/docs/${doc.id}/agents`, { headers }).then((value) => {
-                if (value) setAgents(value);
-              });
+            void Promise.all([
+              refreshWorkspace(),
+              doc ? request<Agent[]>(`/api/docs/${doc.id}/agents`, { headers }) : Promise.resolve(null),
+            ]).then(([, value]) => {
+              if (value) setAgents(value);
+            });
           }}
         />
         {!agents.length ? <div className="empty-state compact"><span className="empty-route orange" aria-hidden="true" />还没有 Agent<br /><small>在这里注册第一个项目 Agent。</small></div> : null}

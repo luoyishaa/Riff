@@ -17,6 +17,7 @@ import { canInviteAgent, canManageAgent as canManageAgentPermission, canSeeAgent
 import { LocalProjectService, type LocalProjectFile } from './infra/local-project.js';
 import { ChatGPTOAuthError, ChatGPTOAuthService, oauthRedirectCode } from './chatgpt-oauth.js';
 import { ModelProviderRegistry, type ModelProviderId } from './model-providers.js';
+import { buildOutline } from './outline.js';
 
 const app = Fastify({ logger: true });
 app.removeContentTypeParser('application/json');
@@ -111,17 +112,6 @@ function broadcastOnlineMembers(docId: string): void {
     const members = visibleMembers(docId, viewerId).filter((member) => onlineIds.has(member.id));
     json(socket, { type: 'members', members });
   }
-}
-function outline(text: string): Array<{ index: number; title: string; start: number; end: number }> {
-  const result: Array<{ index: number; title: string; start: number; end: number }> = [];
-  let start = 0;
-  for (const [index, paragraph] of text.split(/\n{2,}/u).entries()) {
-    const title = paragraph.split('\n')[0]?.trim().slice(0, 80) ?? '';
-    const end = start + paragraph.length;
-    if (title) result.push({ index, title, start, end });
-    start = end + 2;
-  }
-  return result;
 }
 function agentConfigFromInput(principalId: string, input: {
   adapter: { type: 'mock' } | { type: 'openai-compatible'; baseUrl: string; apiKeyEnv: string; model: string } | { type: 'openai-responses'; baseUrl: string; accessTokenEnv: string; model: string; profileId?: string; ownerPrincipalId?: string } | { type: 'cli'; command: string; args?: string[] | undefined; timeoutMs?: number | undefined; includeSystemInPrompt?: boolean | undefined };
@@ -766,13 +756,13 @@ app.get<{ Params: { id: string } }>('/api/docs/:id', async (request, reply) => {
   const principal = principalIdFromHeaders(request.headers);
   const record = store.get(request.params.id); if (!record || !store.role(record.id, principal)) return reply.code(404).send({ error: 'not-found' });
   const text = record.handle.getText();
-  return { id: record.id, title: record.title, workspaceId: record.workspaceId, text, outline: outline(text), members: visibleMembers(record.id, principal) };
+  return { id: record.id, title: record.title, workspaceId: record.workspaceId, text, outline: buildOutline(text, record.relativePath ?? record.title), members: visibleMembers(record.id, principal) };
 });
 app.get<{ Params: { id: string } }>('/api/docs/:id/outline', async (request, reply) => {
   const principalId = principalIdFromHeaders(request.headers);
   const record = store.get(request.params.id);
   if (!record || !roleFor(record.id, principalId)) return fail(reply, 404, 'not-found', 'Document was not found');
-  return outline(record.handle.getText());
+  return buildOutline(record.handle.getText(), record.relativePath ?? record.title);
 });
 app.post<{ Params: { id: string } }>('/api/docs/:id/local-project/sync', async (request, reply) => {
   const principalId = principalIdFromHeaders(request.headers);
