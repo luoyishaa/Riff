@@ -83,7 +83,7 @@ function renderInline(value: string, sourceStart = 0, keyPrefix = 'inline', cont
 
   // This is intentionally a small renderer rather than an HTML converter. Raw
   // HTML is always rendered as text, and links only accept explicit safe schemes.
-  const tokenPattern = /(\\[\\`*_[\]{}()#+.!-]|`[^`]+`|\$\$[^$]+\$\$|\$(?:\\.|[^$\n])+\$|<https?:\/\/[^>]+>|\[\^[^\]]+\]|!?(?:\[[^\]]+\])\([^\s)]+(?:\s+["'][^"']*["'])?\)|\[[^\]]+\]\[[^\]]*\]|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_)/;
+  const tokenPattern = /(\\[\\`*_[\]{}()#+.!-]|`[^`]+`|\$\$[^$]+\$\$|\$(?:\\.|[^$\n])+\$|<https?:\/\/[^>]+>|\[\^[^\]]+\]|!?(?:\[[^\]]+\])\([^\s)]+(?:\s+["'][^"']*["'])?\)|\[[^\]]+\]\[[^\]]*\]|\[[^\]\n]+\]|\*\*[^*]+\*\*|__[^_]+__|~~[^~]+~~|\*[^*]+\*|_[^_]+_)/;
   while (remaining.length > 0) {
     const match = tokenPattern.exec(remaining);
     if (!match || match.index === undefined) {
@@ -131,6 +131,13 @@ function renderInline(value: string, sourceStart = 0, keyPrefix = 'inline', cont
       nodes.push(reference && isSafeHref(reference.href)
         ? <a key={tokenKey} href={reference.href} {...(reference.title ? { title: reference.title } : {})} target="_blank" rel="noreferrer">{content}</a>
         : <span key={tokenKey}>{content}</span>);
+    } else if (token.startsWith('[') && token.endsWith(']')) {
+      const label = token.slice(1, -1);
+      const reference = context?.references.get(normalizeReferenceKey(label));
+      const content = sourceSpan(label, tokenStart + 1, tokenKey + '-label');
+      nodes.push(reference && isSafeHref(reference.href)
+        ? <a key={tokenKey} href={reference.href} {...(reference.title ? { title: reference.title } : {})} target="_blank" rel="noreferrer">{content}</a>
+        : sourceSpan(token, tokenStart, tokenKey + '-content'));
     } else if (token.startsWith('$') && token.endsWith('$')) {
       nodes.push(<span key={tokenKey} className="markdown-math-inline">{sourceSpan(token, tokenStart, `${tokenKey}-content`)}</span>);
     } else if (token.startsWith('\\')) {
