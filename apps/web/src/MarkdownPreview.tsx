@@ -265,6 +265,7 @@ function boundarySourceOffset(root: HTMLElement, node: Node, offset: number): nu
 export function MarkdownPreview({ value, className, onSelectionChange, onAction, onInlineActionSubmit, members = [], scrollTo, active = true }: MarkdownPreviewProps): React.ReactElement {
   const blocks = parseBlocks(value);
   const rootRef = useRef<HTMLElement | null>(null);
+  const pointerSelectingRef = useRef(false);
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
   const [inlineComposer, setInlineComposer] = useState<{ top: number; left: number; mode: InlineComposerMode } | null>(null);
   const handleAction = (action: MarkdownPreviewAction) => {
@@ -277,14 +278,14 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
   };
 
   useEffect(() => {
-    const handleSelectionChange = () => {
+    const readSelection = () => {
       const root = rootRef.current;
       const selection = window.getSelection();
       if (document.activeElement instanceof Element && document.activeElement.closest('.selection-inline-composer')) return;
       if (!root || !selection || selection.isCollapsed || !selection.anchorNode || !selection.focusNode || !root.contains(selection.anchorNode) || !root.contains(selection.focusNode)) {
         setMenu(null);
         onSelectionChange?.(null);
-        return;
+        return false;
       }
       const anchor = boundarySourceOffset(root, selection.anchorNode, selection.anchorOffset);
       const focus = boundarySourceOffset(root, selection.focusNode, selection.focusOffset);
@@ -292,8 +293,14 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
       if (anchor === null || focus === null || anchor === focus || !quote.trim()) {
         setMenu(null);
         onSelectionChange?.(null);
-        return;
+        return false;
       }
+      return { root, selection, anchor, focus };
+    };
+    const showSelectionMenu = () => {
+      const selected = readSelection();
+      if (!selected) return;
+      const { root, selection, anchor, focus } = selected;
       const range = selection.getRangeAt(0);
       const rect = range.getBoundingClientRect();
       const rootRect = root.getBoundingClientRect();
@@ -306,8 +313,39 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
       });
       onSelectionChange?.({ start: Math.min(anchor, focus), end: Math.max(anchor, focus) });
     };
+    const handleSelectionChange = () => {
+      const selected = readSelection();
+      if (!selected) return;
+      onSelectionChange?.({ start: Math.min(selected.anchor, selected.focus), end: Math.max(selected.anchor, selected.focus) });
+      // During a pointer drag the browser emits selectionchange repeatedly.
+      // Keep the range available to the parent, but wait for pointerup before
+      // showing the action menu so it never follows the text being selected.
+      if (pointerSelectingRef.current) {
+        setMenu(null);
+        return;
+      }
+      window.requestAnimationFrame(showSelectionMenu);
+    };
+    const beginPointerSelection = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || target.closest('.markdown-selection-menu, .selection-inline-composer')) return;
+      pointerSelectingRef.current = true;
+      setMenu(null);
+    };
+    const finishPointerSelection = () => {
+      if (!pointerSelectingRef.current) return;
+      pointerSelectingRef.current = false;
+      window.requestAnimationFrame(showSelectionMenu);
+    };
     document.addEventListener('selectionchange', handleSelectionChange);
-    return () => document.removeEventListener('selectionchange', handleSelectionChange);
+    rootRef.current?.addEventListener('pointerdown', beginPointerSelection);
+    document.addEventListener('pointerup', finishPointerSelection);
+    return () => {
+      document.removeEventListener('selectionchange', handleSelectionChange);
+      rootRef.current?.removeEventListener('pointerdown', beginPointerSelection);
+      document.removeEventListener('pointerup', finishPointerSelection);
+      pointerSelectingRef.current = false;
+    };
   }, [onSelectionChange]);
 
   useEffect(() => {

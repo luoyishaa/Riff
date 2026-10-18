@@ -56,6 +56,7 @@ export function CodeMirrorEditor({
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
   const [sourceMenu, setSourceMenu] = useState<{ top: number; left: number } | null>(null);
   const [sourceComposer, setSourceComposer] = useState<{ top: number; left: number; mode: InlineComposerMode } | null>(null);
+  const pointerSelectingRef = useRef(false);
   const isMarkdown = documentKind === 'markdown';
 
   onChangeRef.current = onChange;
@@ -106,7 +107,7 @@ export function CodeMirrorEditor({
             const selection = update.state.selection.main;
             if (selection.empty) {
               setSourceMenu(null);
-            } else {
+            } else if (!pointerSelectingRef.current) {
               const coords = view.coordsAtPos(selection.to);
               const pane = sourcePaneRef.current;
               if (coords && pane) {
@@ -127,7 +128,41 @@ export function CodeMirrorEditor({
     const view = new EditorView({ state: editorState, parent: editorHost });
     viewRef.current = view;
 
+    const pane = sourcePaneRef.current;
+    const beginPointerSelection = (event: PointerEvent) => {
+      const target = event.target;
+      if (!(target instanceof Element) || !target.closest('.cm-editor')) return;
+      pointerSelectingRef.current = true;
+      setSourceMenu(null);
+    };
+    const finishPointerSelection = () => {
+      if (!pointerSelectingRef.current) return;
+      pointerSelectingRef.current = false;
+      window.requestAnimationFrame(() => {
+        const selection = view.state.selection.main;
+        if (selection.empty) {
+          setSourceMenu(null);
+          return;
+        }
+        const coords = view.coordsAtPos(selection.to);
+        const currentPane = sourcePaneRef.current;
+        if (!coords || !currentPane) return;
+        const paneRect = currentPane.getBoundingClientRect();
+        const width = 170;
+        const belowTop = coords.bottom - paneRect.top + 8;
+        setSourceMenu({
+          top: belowTop,
+          left: Math.max(8, Math.min(paneRect.width - width - 8, coords.left - paneRect.left)),
+        });
+      });
+    };
+    pane?.addEventListener('pointerdown', beginPointerSelection);
+    document.addEventListener('pointerup', finishPointerSelection);
+
     return () => {
+      pane?.removeEventListener('pointerdown', beginPointerSelection);
+      document.removeEventListener('pointerup', finishPointerSelection);
+      pointerSelectingRef.current = false;
       view.destroy();
       viewRef.current = null;
       editableCompartmentRef.current = null;
