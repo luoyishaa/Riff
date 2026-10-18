@@ -323,7 +323,7 @@ function parseBlocks(value: string): MarkdownBlock[] {
       blocks.push({ type: 'math', text: mathLines.join('\n'), sourceStart: start });
       continue;
     }
-    if (/^ {0,3}(?:<!--|<\/?[A-Za-z][^>]*>)/.test(line)) {
+    if (/^ {0,3}(?:<!--|<\/?(?!https?:\/\/)[A-Za-z][^>]*>)/.test(line)) {
       const htmlLines = [line];
       const htmlStarts = [current.start];
       index += 1;
@@ -553,7 +553,7 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
     if (!root) return;
     const sourceSpans = Array.from(root.querySelectorAll<HTMLElement>('[data-source-start][data-source-end]'));
     sourceSpans.forEach((span) => {
-      span.classList.remove('markdown-review-range', 'markdown-review-thread', 'markdown-review-suggestion', 'markdown-review-unread');
+      span.classList.remove('markdown-review-range', 'markdown-review-thread', 'markdown-review-suggestion', 'markdown-review-unread', 'markdown-review-unread-anchor');
       delete span.dataset.reviewId;
       delete span.dataset.reviewIds;
     });
@@ -565,12 +565,13 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
       });
       for (const span of matching) {
         span.classList.add('markdown-review-range', marker.kind === 'suggestion' ? 'markdown-review-suggestion' : 'markdown-review-thread');
-        if (marker.unread) span.classList.add('markdown-review-unread');
+      if (marker.unread) span.classList.add('markdown-review-unread');
         const ids = new Set((span.dataset.reviewIds ?? '').split(',').filter(Boolean));
         ids.add(marker.id);
         span.dataset.reviewIds = Array.from(ids).join(',');
         span.dataset.reviewId = marker.id;
       }
+      if (marker.unread) matching[0]?.classList.add('markdown-review-unread-anchor');
     }
   }, [reviewMarkers, value]);
 
