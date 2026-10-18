@@ -843,17 +843,23 @@ function App(): React.ReactElement {
     setWorkspaces((current) => current.map((item) => item.id === detail.id ? { ...item, documents: detail.documents } : item));
     setDoc((selected) => selected && detail.documents.some((item) => item.id === selected.id) ? selected : (detail.documents[0] ?? null));
   };
-  const attachLocalProject = async (files: LocalProjectFileInput[], targetWorkspaceId = workspaceId, pathOverride = ''): Promise<LocalProjectStatus | null> => {
+  const attachLocalProject = async (
+    files: LocalProjectFileInput[],
+    targetWorkspaceId = workspaceId,
+    pathOverride = '',
+    allowEmptySelection = false,
+  ): Promise<LocalProjectStatus | null> => {
     if (!targetWorkspaceId) return null;
     const path = pathOverride.trim();
-    if (!path && !files.length) {
+    const hasBrowserDirectory = localDirectoryHandleRef.current !== null;
+    if (!path && !files.length && !hasBrowserDirectory && !allowEmptySelection) {
       setWorkspaceMessage('请先选择文件夹，或填写服务端可访问的绝对路径。');
       return null;
     }
     setWorkspaceMessage(`正在扫描 ${SUPPORTED_LOCAL_DOCUMENT_LABEL} 文档…`);
     const body = {
       ...(path ? { path } : {}),
-      ...(files.length ? { files } : {}),
+      ...(path ? {} : { files }),
     };
     const status = await request<LocalProjectStatus>(`/api/workspaces/${targetWorkspaceId}/local-project`, {
       method: 'POST',
@@ -901,6 +907,7 @@ function App(): React.ReactElement {
     setNewProjectFolderName(files[0]?.relativePath.split('/')[0] ?? '已选择文件夹');
     setLocalProjectFolderName(files[0]?.relativePath.split('/')[0] ?? '已选择文件夹');
     setLocalWritebackAvailable(false);
+    setWorkspaceMessage('');
     event.target.value = '';
   };
   const chooseNewProjectFolder = async () => {
@@ -916,7 +923,7 @@ function App(): React.ReactElement {
         setNewProjectFolderName(directory.name);
         setLocalProjectFolderName(directory.name);
         setLocalWritebackAvailable(true);
-        if (!result.files.length) setWorkspaceMessage(`这个文件夹中没有 ${SUPPORTED_LOCAL_DOCUMENT_LABEL} 文档，请选择包含 TXT 或 MD 的文件夹。`);
+        setWorkspaceMessage(result.files.length ? '' : `文件夹已选择，里面暂时没有 ${SUPPORTED_LOCAL_DOCUMENT_LABEL} 文档。创建后仍可继续绑定。`);
       } catch (error) {
         if (error instanceof DOMException && error.name === 'AbortError') return;
         setWorkspaceMessage('无法读取这个文件夹，请改用服务端路径。');
@@ -1376,7 +1383,7 @@ function App(): React.ReactElement {
   const createWorkspace = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     if (!newWorkspaceTitle.trim()) return;
-    if (!newProjectPath.trim() && !newProjectFiles.length) {
+    if (!newProjectPath.trim() && !newProjectFiles.length && !newProjectFolderName.trim()) {
       setWorkspaceMessage('请选择项目文件夹，项目创建后会立即与本地目录建立连接。');
       return;
     }
@@ -1393,7 +1400,8 @@ function App(): React.ReactElement {
     }
     const selectedFiles = newProjectFiles;
     const selectedPath = newProjectPath;
-    const selectedDirectory = localDirectoryHandleRef.current;
+    const selectedFolderWasChosen = Boolean(newProjectFolderName.trim());
+    const selectedDirectory = selectedFolderWasChosen ? localDirectoryHandleRef.current : null;
     setNewWorkspaceTitle('');
     setWorkspaceMessage('项目已创建，正在绑定本地文件夹…');
     setShowNewWorkspace(false);
@@ -1410,7 +1418,7 @@ function App(): React.ReactElement {
     setActiveThreadId(null);
     setOutlineEntries([]);
     setCollapsedFolders(new Set());
-    const attached = await attachLocalProject(selectedFiles, created.id, selectedPath);
+    const attached = await attachLocalProject(selectedFiles, created.id, selectedPath, selectedFolderWasChosen);
     if (!attached) setWorkspaceMessage('项目已创建，但本地文件夹绑定失败，请检查目录后重试。');
     else setWorkspaceMessage('项目已创建，本地文件夹已绑定。');
     setNewProjectPath('');
