@@ -25,6 +25,10 @@ export interface Message {
   body: string;
   mentions: string[];
   createdAt: number;
+  /** Withdrawn messages remain in the thread so the conversation history stays stable. */
+  status?: 'visible' | 'withdrawn';
+  withdrawnAt?: number;
+  withdrawnBy?: string;
 }
 
 export type SuggestionStatus = 'pending' | 'accepted' | 'rejected' | 'stale';
@@ -44,6 +48,9 @@ export interface Suggestion {
   decidedBy?: string;
   decidedAt?: number;
   createdAt: number;
+  /** A pending suggestion can be withdrawn by its author before review. */
+  withdrawnAt?: number;
+  withdrawnBy?: string;
 }
 
 export interface Batch {
@@ -91,6 +98,7 @@ export type ReviewEvent =
   | { type: 'thread.created'; thread: Thread }
   | { type: 'thread.resolved'; thread: Thread }
   | { type: 'message.created'; message: Message }
+  | { type: 'message.updated'; message: Message }
   | { type: 'suggestion.created'; suggestion: Suggestion }
   | { type: 'suggestion.updated'; suggestion: Suggestion }
   | { type: 'batch.created'; batch: Batch };
@@ -135,4 +143,11 @@ export interface CreateSuggestionInput {
   newText: string;
   rationale?: string;
   authorEffectiveRole?: Role;
+}
+
+export interface UpdateSuggestionInput {
+  suggestionId: string;
+  newText: string;
+  editorId: string;
+  editorRole: Role;
 }

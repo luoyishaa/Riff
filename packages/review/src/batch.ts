@@ -13,7 +13,7 @@ export function getBatchProgress(repository: ReviewRepository, batchId: string):
   if (!batch) return err('batch-not-found');
   const docId = repository.getThread(batch.threadId)?.docId ?? '';
   const suggestions = repository.listSuggestions(docId).filter((suggestion) => suggestion.batchId === batchId);
-  const count = (status: SuggestionStatus): number => suggestions.filter((suggestion) => suggestion.status === status).length;
+  const count = (status: SuggestionStatus): number => suggestions.filter((suggestion) => suggestion.status === status && suggestion.withdrawnAt === undefined).length;
   return { ok: true, value: { total: suggestions.length, pending: count('pending'), accepted: count('accepted'), rejected: count('rejected'), stale: count('stale') } };
 }
 
@@ -32,6 +32,10 @@ export function decideBatchRemaining(
   const items: BatchItemDecision[] = [];
   for (const suggestion of host.repository.listSuggestions(thread.docId).filter((item) => item.batchId === batchId)) {
     const current = host.repository.getSuggestion(suggestion.id) ?? suggestion;
+    if (current.withdrawnAt !== undefined) {
+      items.push({ suggestionId: current.id, status: current.status, error: 'invalid-state' });
+      continue;
+    }
     if (current.status !== 'pending') {
       items.push({ suggestionId: current.id, status: current.status, ...(current.status === 'stale' ? { error: 'stale-anchor' } : {}) });
       continue;

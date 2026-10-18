@@ -10,11 +10,12 @@ const editSchema = z.object({
   contextAfter: z.string().optional(),
   rationale: z.string().optional(),
 }).strict();
-const outputSchema = z.object({ reply: z.string(), edits: z.array(editSchema).default([]) }).strict();
+const outputSchema = z.object({ reply: z.string(), edits: z.array(editSchema).default([]), relatedEdits: z.array(editSchema).default([]) }).strict();
 
 export interface AgentOutput {
   reply: string;
   edits: AgentEdit[];
+  relatedEdits: AgentEdit[];
 }
 
 export type OutputError = 'no-json-object' | 'invalid-json' | 'invalid-output';
@@ -61,12 +62,21 @@ export function parseAgentOutput(raw: string): Result<AgentOutput, OutputError> 
     ...(edit.contextAfter === undefined ? {} : { contextAfter: edit.contextAfter }),
     ...(edit.rationale === undefined ? {} : { rationale: edit.rationale }),
   }));
-  return { ok: true, value: { reply: parsed.data.reply, edits } };
+  const relatedEdits: AgentEdit[] = parsed.data.relatedEdits.map((edit) => ({
+    op: edit.op,
+    quote: edit.quote,
+    newText: edit.newText,
+    ...(edit.contextBefore === undefined ? {} : { contextBefore: edit.contextBefore }),
+    ...(edit.contextAfter === undefined ? {} : { contextAfter: edit.contextAfter }),
+    ...(edit.rationale === undefined ? {} : { rationale: edit.rationale }),
+  }));
+  return { ok: true, value: { reply: parsed.data.reply, edits, relatedEdits } };
 }
 
 export interface LocatedEdit extends AgentEdit {
   start: number;
   end: number;
+  scope: 'allowed' | 'document';
 }
 
 export interface ValidatedEdits {
@@ -88,11 +98,11 @@ function occurrences(text: string, quote: string): number[] {
   return result;
 }
 
-export function validateEdits(output: AgentOutput, allowedText: string, maxEdits = 50): ValidatedEdits {
+function validateEditList(source: AgentEdit[], allowedText: string, maxEdits: number, scope: LocatedEdit['scope']): ValidatedEdits {
   const edits: LocatedEdit[] = [];
   const rejected: ValidatedEdits['rejected'] = [];
   const limit = Math.max(0, maxEdits);
-  for (const [index, edit] of output.edits.entries()) {
+  for (const [index, edit] of source.entries()) {
     if (index >= limit) continue;
     const candidates = occurrences(allowedText, edit.quote).filter((start) => {
       const before = edit.contextBefore === undefined || allowedText.slice(Math.max(0, start - edit.contextBefore.length), start) === edit.contextBefore;
@@ -106,7 +116,15 @@ export function validateEdits(output: AgentOutput, allowedText: string, maxEdits
     const end = start + edit.quote.length;
     const overlaps = edits.some((existing) => start < existing.end && existing.start < end);
     if (overlaps) { rejected.push({ index, reason: 'overlap' }); continue; }
-    edits.push({ ...edit, start, end });
+    edits.push({ ...edit, start, end, scope });
   }
-  return { edits, rejected, truncated: Math.max(0, output.edits.length - limit) };
+  return { edits, rejected, truncated: Math.max(0, source.length - limit) };
+}
+
+export function validateEdits(output: AgentOutput, allowedText: string, maxEdits = 50): ValidatedEdits {
+  return validateEditList(output.edits, allowedText, maxEdits, 'allowed');
+}
+
+export function validateRelatedEdits(output: AgentOutput, documentText: string, maxEdits = 50): ValidatedEdits {
+  return validateEditList(output.relatedEdits, documentText, maxEdits, 'document');
 }

@@ -61,11 +61,16 @@ export interface AgentMessagePort {
 
 export type AgentStatusState = 'working' | 'idle' | 'failed';
 
+/** Stable categories used to explain an agent failure without exposing raw provider errors in the UI. */
+export type AgentFailureKind = 'permission' | 'timeout' | 'authentication' | 'rate-limit' | 'network' | 'invalid-output' | 'provider' | 'unknown';
+
 export interface AgentStatusEvent {
   type: 'agent.status';
   agentId: string;
   threadId: string;
   state: AgentStatusState;
+  error?: string;
+  errorKind?: AgentFailureKind;
   range?: { start: number; end: number };
 }
 
@@ -86,6 +91,8 @@ export interface AgentRunRequest {
   textSnapshot?: string;
   /** Optional allowed context used to validate returned edits. */
   allowedText?: string;
+  /** Full document text used only for consistency checks outside a selected range. */
+  documentText?: string;
 }
 
 export interface AgentRunResult {

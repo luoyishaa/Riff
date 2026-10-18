@@ -79,6 +79,7 @@ export const createSuggestionSchema = z.object({
   newText: z.string(),
   rationale: z.string().max(1000).optional(),
 });
+export const updateSuggestionSchema = z.object({ newText: z.string().max(200000) }).strict();
 const adapterConfigSchema = z.discriminatedUnion('type', [
   z.object({ type: z.literal('mock') }).strict(),
   z.object({
@@ -179,6 +180,7 @@ export type LocalProjectSyncInput = z.infer<typeof localProjectSyncSchema>;
 export type CreateThreadInput = z.infer<typeof createThreadSchema>;
 export type CreateMessageInput = z.infer<typeof createMessageSchema>;
 export type CreateSuggestionInput = z.infer<typeof createSuggestionSchema>;
+export type UpdateSuggestionInput = z.infer<typeof updateSuggestionSchema>;
 export type AgentConfigInput = z.infer<typeof agentConfigSchema>;
 export type AgentProviderConnectInput = z.infer<typeof agentProviderConnectSchema>;
 export type ModelProviderConnectInput = z.infer<typeof modelProviderConnectSchema>;

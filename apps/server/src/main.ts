@@ -4,7 +4,7 @@ import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
 import { can, randomId, roleRank, systemClock, type Principal, type Role } from '@collab/kernel';
 import { ReviewService, type ReviewEvent } from '@collab/review';
 import type { AdapterConfig, AgentConfig } from '@collab/agent';
-import { agentConfigSchema, agentProviderConnectSchema, authLoginSchema, createAgentSchema, createDocumentSchema, createMessageSchema, createSuggestionSchema, createThreadSchema, createWorkspaceSchema, deleteWorkspaceSchema, localProjectBindSchema, localProjectSyncSchema, modelProviderBindingSchema, modelProviderConnectSchema, modelProviderIdSchema, registerPrincipalSchema, switchAccountSchema, updateAccountSchema, updateWorkspaceSchema, workspaceInvitationSchema, workspaceMemberSchema } from '@collab/protocol';
+import { agentConfigSchema, agentProviderConnectSchema, authLoginSchema, createAgentSchema, createDocumentSchema, createMessageSchema, createSuggestionSchema, createThreadSchema, createWorkspaceSchema, deleteWorkspaceSchema, localProjectBindSchema, localProjectSyncSchema, modelProviderBindingSchema, modelProviderConnectSchema, modelProviderIdSchema, registerPrincipalSchema, switchAccountSchema, updateAccountSchema, updateSuggestionSchema, updateWorkspaceSchema, workspaceInvitationSchema, workspaceMemberSchema } from '@collab/protocol';
 import { WebSocketServer, type WebSocket, type RawData } from 'ws';
 import { DocumentStore, type PrincipalRecord } from './infra/document-store.js';
 import { ReviewStore } from './infra/review-store.js';
@@ -998,6 +998,18 @@ app.post<{ Params: { id: string } }>('/api/threads/:id/messages', async (request
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to add message');
   return result.value;
 });
+app.post<{ Params: { id: string } }>('/api/messages/:id/withdraw', async (request, reply) => {
+  const message = reviewStore.getMessage(request.params.id);
+  if (!message) return fail(reply, 404, 'message-not-found', 'Message was not found');
+  const thread = reviewStore.getThread(message.threadId);
+  if (!thread) return fail(reply, 404, 'thread-not-found', 'Thread was not found');
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(thread.docId, principalId);
+  if (!role) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  const result = reviewService.withdrawMessage(message.id, principalId, role);
+  if (!result.ok) return fail(reply, 400, result.error, 'Unable to withdraw message');
+  return result.value;
+});
 app.post<{ Params: { id: string } }>('/api/threads/:id/resolve', async (request, reply) => {
   const thread = reviewStore.getThread(request.params.id);
   if (!thread) return fail(reply, 404, 'thread-not-found', 'Thread was not found');
@@ -1018,6 +1030,18 @@ app.post<{ Params: { id: string } }>('/api/suggestions/:id/accept', async (reque
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to accept suggestion');
   return result.value;
 });
+app.patch<{ Params: { id: string } }>('/api/suggestions/:id', async (request, reply) => {
+  const suggestion = reviewStore.getSuggestion(request.params.id);
+  if (!suggestion) return fail(reply, 404, 'suggestion-not-found', 'Suggestion was not found');
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(suggestion.docId, principalId);
+  if (!role) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  const parsed = updateSuggestionSchema.safeParse(request.body);
+  if (!parsed.success) return fail(reply, 400, 'invalid-request', parsed.error.message);
+  const result = reviewService.updateSuggestion({ suggestionId: suggestion.id, newText: parsed.data.newText, editorId: principalId, editorRole: role });
+  if (!result.ok) return fail(reply, 400, result.error, 'Unable to update suggestion');
+  return result.value;
+});
 app.post<{ Params: { id: string } }>('/api/suggestions/:id/reject', async (request, reply) => {
   const suggestion = reviewStore.getSuggestion(request.params.id);
   if (!suggestion) return fail(reply, 404, 'suggestion-not-found', 'Suggestion was not found');
@@ -1026,6 +1050,16 @@ app.post<{ Params: { id: string } }>('/api/suggestions/:id/reject', async (reque
   if (!role) return fail(reply, 403, 'permission-denied', 'Membership is required');
   const result = reviewService.rejectSuggestion(suggestion.id, principalId, role);
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to reject suggestion');
+  return result.value;
+});
+app.post<{ Params: { id: string } }>('/api/suggestions/:id/withdraw', async (request, reply) => {
+  const suggestion = reviewStore.getSuggestion(request.params.id);
+  if (!suggestion) return fail(reply, 404, 'suggestion-not-found', 'Suggestion was not found');
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(suggestion.docId, principalId);
+  if (!role) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  const result = reviewService.withdrawSuggestion(suggestion.id, principalId, role);
+  if (!result.ok) return fail(reply, 400, result.error, 'Unable to withdraw suggestion');
   return result.value;
 });
 app.post<{ Params: { id: string } }>('/api/suggestions/:id/regenerate', async (request, reply) => {

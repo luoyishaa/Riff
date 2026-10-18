@@ -10,6 +10,7 @@ import {
   buildContext,
   type AgentAdapter,
   type AgentConfig,
+  type AgentFailureKind,
   type AgentRunRequest,
   type AgentStatusState,
   type ChatCompletionResponse,
@@ -46,8 +47,9 @@ export const AGENT_SYSTEM_PROMPT = [
   '你是协作写作助手。',
   '只根据本次触发消息执行，不要把线程中的旧请求当作当前指令。',
   '用户要求扩展、改写、润色或替换时，必须在 edits 中给出可审批的文本修改；如果无需修改或用户只是在提问，edits 可以为空。',
+  '选区之外的内容只作为全文一致性检查素材；如果修改会影响其他位置的术语、指代、链接或依赖引用，只在 relatedEdits 中提出额外建议。edits 只能改选区，relatedEdits 才能改全文其他位置；没有明确影响时 relatedEdits 必须为空。',
   '每个 edit 必须使用字段 op、quote、newText，可选 contextBefore、contextAfter、rationale；op 只能是 replace、delete 或 insert。replace 必须把 quote 逐字替换为 newText。不要使用 replacement、oldText、changes 或其他字段名。',
-  '始终只返回一个合法 JSON 对象，字段为 reply（字符串）和 edits（数组）；不要输出 Markdown、代码围栏或额外文字。',
+  '始终只返回一个合法 JSON 对象，字段为 reply（字符串）、edits（数组）和 relatedEdits（数组，可为空）；不要输出 Markdown、代码围栏或额外文字。',
   '修改必须限定在允许区域，保持原文语言。',
 ].join('\n');
 
@@ -59,7 +61,17 @@ interface AgentListItem {
   contextStrategy: AgentConfig['contextStrategy'];
   grantedRole: Role;
   status: AgentStatusState | 'idle';
+  error?: string;
+  errorKind?: AgentFailureKind;
   accessPolicy: 'public' | 'private';
+}
+
+interface AgentStatusRecord {
+  state: AgentStatusState;
+  threadId: string;
+  sequence: number;
+  error?: string;
+  errorKind?: AgentFailureKind;
 }
 
 function isAgentConfig(value: unknown): value is AgentConfig {
@@ -213,7 +225,8 @@ function quoteWindows(value: string): string {
 export class AgentRuntime {
   private readonly configs = new Map<string, AgentConfig>();
   private readonly sessionApiKeys = new Map<string, string>();
-  private readonly statuses = new Map<string, AgentStatusState>();
+  private readonly statuses = new Map<string, AgentStatusRecord>();
+  private statusSequence = 0;
   private readonly dispatcher: AgentDispatcher;
   private readonly runner: AgentRunner;
 
@@ -232,7 +245,7 @@ export class AgentRuntime {
       runs: options.agentStore,
       views: options.agentStore,
       controls: { start: (timeoutMs) => this.startControl(timeoutMs) },
-      statuses: { publish: (event) => this.publishStatus(event.agentId, event.threadId, event.state, event.range) },
+      statuses: { publish: (event) => this.publishStatus(event.agentId, event.threadId, event.state, event.range, event.error, event.errorKind) },
       messages: { postFailure: (threadId, agentId, body) => this.postAgentMessage(threadId, agentId, body) },
       maxRetries: 1,
     });
@@ -242,6 +255,7 @@ export class AgentRuntime {
   list(docId: string, viewerId?: string): AgentListItem[] {
     return this.options.store.members(docId).filter((member) => member.kind === 'agent' && this.isVisible(docId, member.id, viewerId)).map((member) => {
       const config = this.configs.get(this.key(docId, member.id));
+      const statusRecord = this.latestStatus(docId, member.id);
       return {
         id: member.id,
         displayName: member.displayName,
@@ -249,7 +263,9 @@ export class AgentRuntime {
         provider: config?.adapter.type === 'cli' ? config.adapter.command : config?.adapter.type ?? 'mock',
         contextStrategy: config?.contextStrategy ?? 'window',
         grantedRole: config?.grantedRole ?? member.role,
-        status: [...this.statuses.entries()].find(([key]) => key.startsWith(`${docId}:`) && key.endsWith(`:${member.id}`))?.[1] ?? 'idle',
+        status: statusRecord?.state ?? 'idle',
+        ...(statusRecord?.error === undefined ? {} : { error: statusRecord.error }),
+        ...(statusRecord?.errorKind === undefined ? {} : { errorKind: statusRecord.errorKind }),
         accessPolicy: config?.accessPolicy ?? 'public',
       };
     });
@@ -393,6 +409,7 @@ export class AgentRuntime {
     const requesterRole = this.options.store.role(thread.docId, requesterId) ?? 'viewer';
     if (config.accessPolicy === 'private' && requesterId !== agent?.ownerId && requesterRole !== 'owner') {
       this.postAgentMessage(threadId, agentId, '该 Agent 当前为私有模式，仅允许其所有者或文档 owner 交互。');
+      this.publishStatus(agentId, threadId, 'failed', undefined, 'private agent access is restricted', 'permission');
       return;
     }
     const selection = thread.scope.type === 'range' ? (() => {
@@ -423,11 +440,12 @@ export class AgentRuntime {
       adapter: this.adapter(thread.docId, config),
       prompt: {
         system: AGENT_SYSTEM_PROMPT,
-        user: `${context.text}\n\n触发消息：${triggerBody}\n请根据允许区域提出修改。`,
+        user: `${context.text}\n\n触发消息：${triggerBody}\n请先处理选区内的请求；如果修改会影响全文其他位置，再用 relatedEdits 提出选区之外的、能由原文直接验证的同步建议。不要直接改正文。`,
       },
       inputChars: context.inputChars,
       ...(config.adapter.type === 'cli' ? { timeoutMs: config.adapter.timeoutMs ?? DEFAULT_CLI_TIMEOUT_MS } : {}),
       allowedText: context.allowedText,
+      documentText: document.handle.getText(),
       textSnapshot: document.handle.getText(),
       ...(selection === undefined ? {} : { range: selection }),
     };
@@ -446,9 +464,11 @@ export class AgentRuntime {
     const batchId = batch?.ok ? batch.value.id : undefined;
     const suggestionIds: string[] = [];
     for (const edit of result.edits as LocatedEdit[]) {
-      const start = typeof edit.start === 'number' ? edit.start + allowedOffset : document.handle.getText().indexOf(edit.quote);
+      const start = typeof edit.start === 'number' && edit.start >= 0
+        ? (edit.scope === 'document' ? edit.start : edit.start + allowedOffset)
+        : document.handle.getText().indexOf(edit.quote);
       if (start < 0) continue;
-      const end = edit.op === 'insert' ? start + edit.quote.length : (typeof edit.end === 'number' ? edit.end + allowedOffset : start + edit.quote.length);
+      const end = edit.op === 'insert' ? start + edit.quote.length : (typeof edit.end === 'number' && edit.end >= 0 ? (edit.scope === 'document' ? edit.end : edit.end + allowedOffset) : start + edit.quote.length);
       const anchor = this.options.reviewService.createAnchor(thread.docId, edit.op === 'insert' ? end : start, edit.op === 'insert' ? end : end);
       if (!anchor.ok) continue;
       const suggestion = this.options.reviewService.createSuggestion({
@@ -475,11 +495,19 @@ export class AgentRuntime {
     this.options.reviewService.addMessage({ threadId, authorId: agentId, body, authorRole: role });
   }
 
-  private publishStatus(agentId: string, threadId: string, state: AgentStatusState, range?: { start: number; end: number }): void {
+  private publishStatus(agentId: string, threadId: string, state: AgentStatusState, range?: { start: number; end: number }, error?: string, errorKind?: AgentFailureKind): void {
     const thread = this.options.reviewStore.getThread(threadId);
     if (!thread) return;
-    this.statuses.set(`${thread.docId}:${threadId}:${agentId}`, state);
-    this.options.eventBus.publish({ type: 'agent.status', docId: thread.docId, occurredAt: this.options.now(), data: { type: 'agent.status', agentId, threadId, state, ...(range === undefined ? {} : { range }) } });
+    const record: AgentStatusRecord = { state, threadId, sequence: ++this.statusSequence, ...(error === undefined ? {} : { error }), ...(errorKind === undefined ? {} : { errorKind }) };
+    this.statuses.set(`${thread.docId}:${threadId}:${agentId}`, record);
+    this.options.eventBus.publish({ type: 'agent.status', docId: thread.docId, occurredAt: this.options.now(), data: { type: 'agent.status', agentId, threadId, state, ...(error === undefined ? {} : { error }), ...(errorKind === undefined ? {} : { errorKind }), ...(range === undefined ? {} : { range }) } });
+  }
+
+  private latestStatus(docId: string, agentId: string): AgentStatusRecord | undefined {
+    const matches = [...this.statuses.entries()]
+      .filter(([key]) => key.startsWith(`${docId}:`) && key.endsWith(`:${agentId}`))
+      .map(([, value]) => value);
+    return matches.reduce<AgentStatusRecord | undefined>((latest, current) => latest === undefined || current.sequence > latest.sequence ? current : latest, undefined);
   }
 
   private adapter(docId: string, config: AgentConfig): AgentAdapter {

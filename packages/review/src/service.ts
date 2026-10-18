@@ -21,6 +21,7 @@ import type {
   BatchItemDecision,
   BatchProgress,
   CreateSuggestionInput,
+  UpdateSuggestionInput,
   CreateThreadInput,
   Message,
   ReviewError,
@@ -113,10 +114,24 @@ export class ReviewService {
       body: input.body,
       mentions: input.mentions ? [...input.mentions] : [],
       createdAt: this.options.clock.now(),
+      status: 'visible',
     };
     this.options.repository.saveMessage(message);
     notify(this.options, { type: 'message.created', message });
     return { ok: true, value: message };
+  }
+
+  withdrawMessage(messageId: string, actorId: string, actorRole: Role): Result<Message, ReviewError> {
+    const permission = withRole(actorRole, 'comment');
+    if (!permission.ok) return permission;
+    const message = this.options.repository.getMessage(messageId);
+    if (!message) return err('message-not-found');
+    if (message.authorId !== actorId) return err('permission-denied');
+    if (message.status === 'withdrawn') return err('invalid-state');
+    const withdrawn: Message = { ...message, status: 'withdrawn', withdrawnAt: this.options.clock.now(), withdrawnBy: actorId };
+    this.options.repository.saveMessage(withdrawn);
+    notify(this.options, { type: 'message.updated', message: withdrawn });
+    return { ok: true, value: withdrawn };
   }
 
   createBatch(threadId: string, createdBy: string): Result<Batch, ReviewError> {
@@ -214,7 +229,7 @@ export class ReviewService {
     const suggestion = this.options.repository.getSuggestion(suggestionId);
     if (!suggestion) return err('suggestion-not-found');
     if (suggestion.docId !== docId) return err('document-not-found');
-    if (suggestion.status !== 'pending') return err('invalid-state');
+    if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) return err('invalid-state');
     const document = this.options.documents.getDocument(docId);
     if (!document) return err('document-not-found');
     const resolution = resolveAnchor(document, suggestion.anchor);
@@ -274,6 +289,17 @@ export class ReviewService {
     return { ok: true, value: { suggestion: accepted, resolution: 'exact' } };
   }
 
+  updateSuggestion(input: UpdateSuggestionInput): Result<Suggestion, ReviewError> {
+    if (!can(input.editorRole, 'approve')) return err('permission-denied');
+    const suggestion = this.options.repository.getSuggestion(input.suggestionId);
+    if (!suggestion) return err('suggestion-not-found');
+    if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) return err('invalid-state');
+    const updated: Suggestion = { ...suggestion, newText: input.newText };
+    this.options.repository.saveSuggestion(updated);
+    notify(this.options, { type: 'suggestion.updated', suggestion: updated });
+    return { ok: true, value: updated };
+  }
+
   rejectSuggestion(
     suggestionId: string,
     deciderId: string,
@@ -282,7 +308,7 @@ export class ReviewService {
     if (!can(deciderRole, 'approve')) return err('permission-denied');
     const suggestion = this.options.repository.getSuggestion(suggestionId);
     if (!suggestion) return err('suggestion-not-found');
-    if (suggestion.status !== 'pending') return err('invalid-state');
+    if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) return err('invalid-state');
     const rejected: Suggestion = {
       ...suggestion,
       status: 'rejected',
@@ -294,13 +320,29 @@ export class ReviewService {
     return { ok: true, value: rejected };
   }
 
+  withdrawSuggestion(suggestionId: string, actorId: string, actorRole: Role): Result<Suggestion, ReviewError> {
+    // Withdrawing an existing suggestion is a cleanup action, so a member who
+    // can participate in the thread may retract their own pending suggestion
+    // even if their suggestion privilege was later reduced.
+    const permission = withRole(actorRole, 'comment');
+    if (!permission.ok) return permission;
+    const suggestion = this.options.repository.getSuggestion(suggestionId);
+    if (!suggestion) return err('suggestion-not-found');
+    if (suggestion.authorId !== actorId) return err('permission-denied');
+    if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) return err('invalid-state');
+    const withdrawn: Suggestion = { ...suggestion, withdrawnAt: this.options.clock.now(), withdrawnBy: actorId };
+    this.options.repository.saveSuggestion(withdrawn);
+    notify(this.options, { type: 'suggestion.updated', suggestion: withdrawn });
+    return { ok: true, value: withdrawn };
+  }
+
   /** Mark pending suggestions whose anchors no longer resolve exactly as stale. */
   refreshPending(docId: string): Suggestion[] {
     const document = this.options.documents.getDocument(docId);
     if (!document) return [];
     const stale: Suggestion[] = [];
     for (const suggestion of this.options.repository.listSuggestions(docId)) {
-      if (suggestion.status !== 'pending') continue;
+      if (suggestion.status !== 'pending' || suggestion.withdrawnAt !== undefined) continue;
       if (resolveAnchor(document, suggestion.anchor).status === 'exact') continue;
       const updated: Suggestion = { ...suggestion, status: 'stale', decidedAt: this.options.clock.now() };
       this.options.repository.saveSuggestion(updated);

@@ -7,11 +7,36 @@ export class MockAdapter implements AgentAdapter {
     const english = /replace\s+"([^"]*)"\s+with\s+"([^"]*)"/i.exec(trigger);
     const chinese = /把「([^」]*)」改成「([^」]*)」/.exec(trigger);
     const match = english ?? chinese;
-    if (!match) return { text: JSON.stringify({ reply: `收到：${trigger}`, edits: [] }) };
+    if (!match) return { text: JSON.stringify({ reply: `收到：${trigger}`, edits: [], relatedEdits: [] }) };
     const quote = match[1] ?? '';
     const newText = match[2] ?? '';
-    return { text: JSON.stringify({ reply: `已提出将“${quote}”改为“${newText}”。`, edits: [{ op: 'replace', quote, newText }] }) };
+    const relatedEdits = relatedOccurrences(req.user, quote, newText);
+    return { text: JSON.stringify({ reply: `已提出将“${quote}”改为“${newText}”。${relatedEdits.length > 0 ? `另发现 ${relatedEdits.length} 处可能需要保持一致。` : ''}`, edits: [{ op: 'replace', quote, newText }], relatedEdits }) };
   }
+}
+
+function relatedOccurrences(prompt: string, quote: string, newText: string): Array<{ op: 'replace'; quote: string; newText: string; contextBefore: string; contextAfter: string; rationale: string }> {
+  const section = prompt.match(/全文一致性检查素材（只读）：\n([\s\S]*?)(?:\n\n线程：|\n\n自上次查看以来|\n\n触发消息：|$)/u)?.[1];
+  const selection = prompt.match(/选区：\n([\s\S]*?)(?:\n\n上下文：|\n\n全文一致性检查素材|\n\n线程：|\n\n触发消息：|$)/u)?.[1] ?? '';
+  if (!section || !quote || !selection.includes(quote)) return [];
+  const selectedAt = section.indexOf(selection);
+  if (selectedAt < 0) return [];
+  const result: Array<{ op: 'replace'; quote: string; newText: string; contextBefore: string; contextAfter: string; rationale: string }> = [];
+  let from = 0;
+  while (from <= section.length) {
+    const index = section.indexOf(quote, from);
+    if (index < 0) break;
+    if (index !== selectedAt) {
+      result.push({
+        op: 'replace', quote, newText,
+        contextBefore: section.slice(Math.max(0, index - 12), index),
+        contextAfter: section.slice(index + quote.length, index + quote.length + 12),
+        rationale: '保持全文中相同术语或引用的一致性。',
+      });
+    }
+    from = index + Math.max(1, quote.length);
+  }
+  return result;
 }
 
 export interface ChatCompletionResponse {

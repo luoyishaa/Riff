@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { agentStatusCopy, type AgentFailureKind } from './agentStatus.js';
 
 export type AgentSummary = {
   id: string;
@@ -8,6 +9,8 @@ export type AgentSummary = {
   grantedRole: string;
   accessPolicy?: 'public' | 'private';
   status: 'working' | 'idle' | 'failed';
+  error?: string;
+  errorKind?: AgentFailureKind;
 };
 
 type AdapterConfig =
@@ -122,8 +125,9 @@ function AgentConfigCard({ docId, agent, owner, modelProviders, onBindProvider, 
       <div className="agent-card-heading">
         <span className="avatar agent">AI</span>
         <div><strong>{agent.displayName}</strong><p>{agent.adapter} · {agent.accessPolicy === 'private' ? '私有' : '公开'} · {agent.contextStrategy}</p></div>
-        <span className={`agent-status ${agent.status}`}>{agent.status === 'working' ? '处理中' : agent.status === 'failed' ? '失败' : '空闲'}</span>
+        <span className={`agent-status ${agent.status}`}>{agentStatusCopy(agent.displayName, agent.status, agent.error, agent.errorKind).label}</span>
       </div>
+      {agent.status === 'failed' ? <p className="agent-status-detail" role="status">{agentStatusCopy(agent.displayName, agent.status, agent.error, agent.errorKind).detail}</p> : null}
       {owner ? (
         <div className="agent-config-form">
           <div className="provider-strip">

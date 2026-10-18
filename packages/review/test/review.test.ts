@@ -43,6 +43,31 @@ describe('review domain', () => {
     }).error).toBe('permission-denied');
   });
 
+  it('allows authors to withdraw their own messages and pending suggestions', () => {
+    const { service, repository } = setup();
+    const thread = service.createThread({
+      docId: 'doc-1', scope: { type: 'document' }, kind: 'discussion', createdBy: 'alice', createdByRole: 'commenter',
+    });
+    expect(thread.ok).toBe(true);
+    if (!thread.ok) return;
+    const message = service.addMessage({ threadId: thread.value.id, authorId: 'alice', body: 'Draft', authorRole: 'commenter' });
+    expect(message.ok).toBe(true);
+    if (!message.ok) return;
+    expect(service.withdrawMessage(message.value.id, 'bob', 'commenter').error).toBe('permission-denied');
+    expect(service.withdrawMessage(message.value.id, 'alice', 'commenter').ok).toBe(true);
+    expect(repository.getMessage(message.value.id)?.status).toBe('withdrawn');
+
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const suggestion = service.createSuggestion({ docId: 'doc-1', authorId: 'alice', anchor: anchor.value, newText: 'ALPHA', authorEffectiveRole: 'suggester' });
+    expect(suggestion.ok).toBe(true);
+    if (!suggestion.ok) return;
+    expect(service.withdrawSuggestion(suggestion.value.suggestion.id, 'alice', 'suggester').ok).toBe(true);
+    expect(repository.getSuggestion(suggestion.value.suggestion.id)?.withdrawnAt).toBe(100);
+    expect(service.acceptSuggestion('doc-1', suggestion.value.suggestion.id, 'alice', 'editor').error).toBe('invalid-state');
+  });
+
   it('accepts a suggestion and preserves the origin metadata', () => {
     const { doc, service, repository } = setup();
     const anchor = service.createAnchor('doc-1', 6, 10);
@@ -57,6 +82,36 @@ describe('review domain', () => {
     expect(accepted.ok).toBe(true);
     expect(doc.getText()).toBe('alpha BETA gamma');
     expect(repository.getSuggestion(suggestion.value.suggestion.id)?.status).toBe('accepted');
+  });
+
+  it('allows an editor to revise a pending suggestion before acceptance', () => {
+    const { doc, service } = setup('ALPHA');
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const created = service.createSuggestion({ docId: 'doc-1', authorId: 'carol', anchor: anchor.value, newText: 'BETA' });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    const updated = service.updateSuggestion({ suggestionId: created.value.suggestion.id, newText: 'GAMMA', editorId: 'alice', editorRole: 'editor' });
+    expect(updated.ok).toBe(true);
+    if (!updated.ok) return;
+    expect(updated.value.newText).toBe('GAMMA');
+    const accepted = service.acceptSuggestion('doc-1', created.value.suggestion.id, 'alice', 'editor');
+    expect(accepted.ok).toBe(true);
+    expect(doc.getText()).toBe('GAMMA');
+  });
+
+  it('keeps suggestion revision behind approval permission and pending state', () => {
+    const { service } = setup('ALPHA');
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const created = service.createSuggestion({ docId: 'doc-1', authorId: 'carol', anchor: anchor.value, newText: 'BETA' });
+    expect(created.ok).toBe(true);
+    if (!created.ok) return;
+    expect(service.updateSuggestion({ suggestionId: created.value.suggestion.id, newText: 'GAMMA', editorId: 'dan', editorRole: 'commenter' }).error).toBe('permission-denied');
+    expect(service.rejectSuggestion(created.value.suggestion.id, 'alice', 'editor').ok).toBe(true);
+    expect(service.updateSuggestion({ suggestionId: created.value.suggestion.id, newText: 'DELTA', editorId: 'alice', editorRole: 'editor' }).error).toBe('invalid-state');
   });
 
   it('marks a suggestion stale when a concurrent edit changes its quote', () => {

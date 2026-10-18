@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { AgentDispatcher, AgentRunner, MockAdapter, OpenAIResponsesAdapter, buildContext, effectiveRole, parseAgentOutput, validateEdits, MemoryAgentRunRepository } from '../src/index.js';
+import { AgentDispatcher, AgentRunner, MockAdapter, OpenAIResponsesAdapter, buildContext, classifyAgentFailure, effectiveRole, parseAgentOutput, validateEdits, validateRelatedEdits, MemoryAgentRunRepository } from '../src/index.js';
 
 describe('agent protocol', () => {
   it('extracts JSON from fenced output and validates unique edits', () => {
@@ -35,6 +35,40 @@ describe('context', () => {
     const context = buildContext({ strategy: 'window', documentText: 'A paragraph.\n\nB paragraph.', selection: { start: 0, end: 1 }, messages: [{ author: 'Alice', body: 'Review' }], maxChars: 30 });
     expect(context.allowedText).toBe('A');
     expect(context.text).toContain('截断');
+  });
+
+  it('includes read-only full text for consistency checks while keeping the selected text as the edit boundary', () => {
+    const context = buildContext({ strategy: 'window', documentText: 'Term appears here.\n\nAnother paragraph repeats Term.', selection: { start: 0, end: 4 }, messages: [], maxChars: 500 });
+    expect(context.text).toContain('全文一致性检查素材（只读）：');
+    expect(context.allowedText).toBe('Term');
+    expect(context.allowedOffset).toBe(0);
+  });
+
+  it('keeps the review thread visible when a long document is truncated', () => {
+    const documentText = `Selected sentence.\n\n${'A long supporting paragraph. '.repeat(80)}`;
+    const context = buildContext({
+      strategy: 'window',
+      documentText,
+      selection: { start: 0, end: 8 },
+      messages: [{ author: 'Alice', body: '请保留这条讨论里的约束' }],
+      maxChars: 180,
+    });
+    expect(context.text).toContain('线程：');
+    expect(context.text).toContain('请保留这条讨论里的约束');
+    expect(context.text).toContain('截断');
+  });
+
+  it('validates related edits against the full document instead of widening the selected edit boundary', async () => {
+    const documentText = 'Term appears here.\n\nAnother paragraph repeats Term.';
+    const context = buildContext({ strategy: 'window', documentText, selection: { start: 0, end: 4 }, messages: [], maxChars: 500 });
+    const adapter = new MockAdapter();
+    const response = await adapter.run({ system: '', user: `${context.text}\n\n触发消息：replace "Term" with "Label"` }, { signal: new AbortController().signal });
+    const parsed = parseAgentOutput(response.text);
+    expect(parsed.ok).toBe(true);
+    if (!parsed.ok) return;
+    expect(validateEdits(parsed.value, context.allowedText).edits).toHaveLength(1);
+    expect(validateRelatedEdits(parsed.value, documentText).edits).toHaveLength(1);
+    expect(validateRelatedEdits(parsed.value, documentText).edits[0]?.scope).toBe('document');
   });
 });
 
@@ -72,6 +106,22 @@ describe('Responses API adapter', () => {
 });
 
 describe('runner and dispatcher', () => {
+  it('classifies provider failures and publishes the category with the failed status', async () => {
+    expect(classifyAgentFailure('agent HTTP 401: invalid token')).toBe('authentication');
+    const statuses: Array<{ state: string; errorKind?: string }> = [];
+    const runs = new MemoryAgentRunRepository();
+    const runner = new AgentRunner({
+      clock: { now: () => 100 }, ids: { next: () => 'run-failed' }, runs,
+      controls: { start: () => ({ signal: new AbortController().signal, timedOut: () => false, cancel: () => undefined }) },
+      statuses: { publish: (event) => statuses.push({ state: event.state, errorKind: event.errorKind }) },
+    });
+    await runner.run({
+      agentId: 'agent', docId: 'doc', threadId: 'thread', requester: { id: 'alice', kind: 'human', displayName: 'Alice' }, requesterRole: 'editor', grantedRole: 'editor', strategy: 'selection',
+      adapter: { id: 'failing', run: async () => { throw new Error('agent HTTP 401: invalid token'); } }, prompt: { system: '', user: 'run' }, inputChars: 3,
+    });
+    expect(statuses).toEqual([{ state: 'working' }, { state: 'failed', errorKind: 'authentication' }]);
+  });
+
   it('records a run and drops edits for commenter effective role', async () => {
     const runs = new MemoryAgentRunRepository();
     const runner = new AgentRunner({
@@ -98,6 +148,23 @@ describe('runner and dispatcher', () => {
     });
     expect(result.edits).toHaveLength(0);
     expect(result.reply).toContain('未生成可审批修改建议');
+  });
+
+  it('returns selected and cross-document consistency suggestions as separate validated edits', async () => {
+    const runs = new MemoryAgentRunRepository();
+    const documentText = 'Term appears here.\n\nAnother paragraph repeats Term.';
+    const context = buildContext({ strategy: 'window', documentText, selection: { start: 0, end: 4 }, messages: [], maxChars: 500 });
+    const runner = new AgentRunner({
+      clock: { now: () => 100 }, ids: { next: () => 'run-related' }, runs,
+      controls: { start: () => ({ signal: new AbortController().signal, timedOut: () => false, cancel: () => undefined }) },
+    });
+    const result = await runner.run({
+      agentId: 'agent', docId: 'doc', threadId: 'thread', requester: { id: 'alice', kind: 'human', displayName: 'Alice' }, requesterRole: 'editor', grantedRole: 'editor', strategy: 'window', adapter: new MockAdapter(),
+      prompt: { system: '', user: `${context.text}\n\n触发消息：replace "Term" with "Label"` }, inputChars: context.inputChars, allowedText: context.allowedText, documentText, range: { start: 0, end: 4 },
+    });
+    expect(result.edits).toHaveLength(2);
+    expect((result.edits[0] as { scope?: string }).scope).toBe('allowed');
+    expect((result.edits[1] as { scope?: string }).scope).toBe('document');
   });
 
   it('queues only the latest trigger while one pair is active', async () => {

@@ -15,13 +15,18 @@ export class ReviewStore implements ReviewRepository {
   constructor(database: DatabaseSync | string) {
     this.db = typeof database === 'string' ? new DatabaseSyncConstructor(database) : database;
     this.db.exec(`CREATE TABLE IF NOT EXISTS threads (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, scope_json TEXT NOT NULL, kind TEXT NOT NULL, agent_id TEXT, status TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS threads_doc_created ON threads(doc_id, created_at);
       CREATE INDEX IF NOT EXISTS messages_thread_created ON messages(thread_id, created_at);
       CREATE INDEX IF NOT EXISTS suggestions_doc_status ON suggestions(doc_id, status);`);
     try { this.db.exec('ALTER TABLE threads ADD COLUMN agent_id TEXT'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE messages ADD COLUMN withdrawn_at INTEGER'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE messages ADD COLUMN withdrawn_by TEXT'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE suggestions ADD COLUMN withdrawn_at INTEGER'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE suggestions ADD COLUMN withdrawn_by TEXT'); } catch { /* Existing databases already have the column. */ }
   }
   listThreads(docId: string): StoredThread[] {
     return (this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, agent_id as agentId, status, created_by as createdBy, created_at as createdAt FROM threads WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>).map((row) => this.thread(row));
@@ -36,26 +41,26 @@ export class ReviewStore implements ReviewRepository {
   saveThread(thread: Thread): void { this.db.prepare('INSERT OR REPLACE INTO threads(id, doc_id, scope_json, kind, agent_id, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.agentId ?? null, thread.status, thread.createdBy, thread.createdAt); }
   resolveThread(id: string): void { this.db.prepare('UPDATE threads SET status = \'resolved\' WHERE id = ?').run(id); }
   listMessages(threadId: string): StoredMessage[] {
-    return (this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, created_at as createdAt FROM messages WHERE thread_id = ? ORDER BY created_at').all(threadId) as Array<Record<string, unknown>>).map((row) => ({ ...row, mentions: JSON.parse(String(row.mentions)) }) as StoredMessage);
+    return (this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, status, withdrawn_at as withdrawnAt, withdrawn_by as withdrawnBy, created_at as createdAt FROM messages WHERE thread_id = ? ORDER BY created_at').all(threadId) as Array<Record<string, unknown>>).map((row) => this.message(row));
   }
-  addMessage(message: StoredMessage): void { this.db.prepare('INSERT INTO messages(id, thread_id, author_id, body, mentions_json, created_at) VALUES (?, ?, ?, ?, ?, ?)').run(message.id, message.threadId, message.authorId, message.body, JSON.stringify(message.mentions), message.createdAt); }
+  addMessage(message: StoredMessage): void { this.db.prepare('INSERT OR REPLACE INTO messages(id, thread_id, author_id, body, mentions_json, status, withdrawn_at, withdrawn_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)').run(message.id, message.threadId, message.authorId, message.body, JSON.stringify(message.mentions), message.status ?? 'visible', message.withdrawnAt ?? null, message.withdrawnBy ?? null, message.createdAt); }
   getMessage(id: string): Message | undefined {
-    const row = this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, created_at as createdAt FROM messages WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    return row ? ({ ...row, mentions: JSON.parse(String(row.mentions)) } as Message) : undefined;
+    const row = this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, status, withdrawn_at as withdrawnAt, withdrawn_by as withdrawnBy, created_at as createdAt FROM messages WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    return row ? this.message(row) : undefined;
   }
   saveMessage(message: Message): void { this.addMessage(message); }
   listSuggestions(docId: string): StoredSuggestion[] {
-    const rows = this.db.prepare('SELECT id, doc_id as docId, thread_id as threadId, batch_id as batchId, author_id as authorId, anchor_json as anchor, new_text as newText, rationale, status, decided_by as decidedBy, decided_at as decidedAt, created_at as createdAt FROM suggestions WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>;
-    return rows.map((row) => ({ ...row, anchor: JSON.parse(String(row.anchor)) }) as StoredSuggestion);
+    const rows = this.db.prepare('SELECT id, doc_id as docId, thread_id as threadId, batch_id as batchId, author_id as authorId, anchor_json as anchor, new_text as newText, rationale, status, decided_by as decidedBy, decided_at as decidedAt, withdrawn_at as withdrawnAt, withdrawn_by as withdrawnBy, created_at as createdAt FROM suggestions WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.suggestion(row));
   }
   getSuggestion(id: string): StoredSuggestion | undefined {
-    const row = this.db.prepare('SELECT id, doc_id as docId, thread_id as threadId, batch_id as batchId, author_id as authorId, anchor_json as anchor, new_text as newText, rationale, status, decided_by as decidedBy, decided_at as decidedAt, created_at as createdAt FROM suggestions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
-    return row ? ({ ...row, anchor: JSON.parse(String(row.anchor)) } as StoredSuggestion) : undefined;
+    const row = this.db.prepare('SELECT id, doc_id as docId, thread_id as threadId, batch_id as batchId, author_id as authorId, anchor_json as anchor, new_text as newText, rationale, status, decided_by as decidedBy, decided_at as decidedAt, withdrawn_at as withdrawnAt, withdrawn_by as withdrawnBy, created_at as createdAt FROM suggestions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    return row ? this.suggestion(row) : undefined;
   }
   createSuggestion(suggestion: StoredSuggestion): void {
-    this.db.prepare('INSERT INTO suggestions(id, doc_id, thread_id, batch_id, author_id, anchor_json, new_text, rationale, status, decided_by, decided_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(suggestion.id, suggestion.docId, suggestion.threadId ?? null, suggestion.batchId ?? null, suggestion.authorId, JSON.stringify(suggestion.anchor), suggestion.newText, suggestion.rationale ?? null, suggestion.status, suggestion.decidedBy ?? null, suggestion.decidedAt ?? null, suggestion.createdAt);
+    this.saveSuggestion(suggestion);
   }
-  saveSuggestion(suggestion: Suggestion): void { this.db.prepare('INSERT OR REPLACE INTO suggestions(id, doc_id, thread_id, batch_id, author_id, anchor_json, new_text, rationale, status, decided_by, decided_at, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(suggestion.id, suggestion.docId, suggestion.threadId ?? null, suggestion.batchId ?? null, suggestion.authorId, JSON.stringify(suggestion.anchor), suggestion.newText, suggestion.rationale ?? null, suggestion.status, suggestion.decidedBy ?? null, suggestion.decidedAt ?? null, suggestion.createdAt); }
+  saveSuggestion(suggestion: Suggestion): void { this.db.prepare('INSERT OR REPLACE INTO suggestions(id, doc_id, thread_id, batch_id, author_id, anchor_json, new_text, rationale, status, decided_by, decided_at, withdrawn_at, withdrawn_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(suggestion.id, suggestion.docId, suggestion.threadId ?? null, suggestion.batchId ?? null, suggestion.authorId, JSON.stringify(suggestion.anchor), suggestion.newText, suggestion.rationale ?? null, suggestion.status, suggestion.decidedBy ?? null, suggestion.decidedAt ?? null, suggestion.withdrawnAt ?? null, suggestion.withdrawnBy ?? null, suggestion.createdAt); }
   updateSuggestionStatus(id: string, status: Suggestion['status'], decidedBy?: string, decidedAt?: number): void { this.db.prepare('UPDATE suggestions SET status = ?, decided_by = ?, decided_at = ? WHERE id = ?').run(status, decidedBy ?? null, decidedAt ?? null, id); }
   getBatch(id: string): Batch | undefined { return this.db.prepare('SELECT id, thread_id as threadId, created_by as createdBy, created_at as createdAt FROM batches WHERE id = ?').get(id) as Batch | undefined; }
   listBatches(threadId: string): Batch[] { return this.db.prepare('SELECT id, thread_id as threadId, created_by as createdBy, created_at as createdAt FROM batches WHERE thread_id = ? ORDER BY created_at').all(threadId) as unknown as Batch[]; }
@@ -71,6 +76,29 @@ export class ReviewStore implements ReviewRepository {
       id: String(row.id), docId: String(row.docId), scope: JSON.parse(String(row.scope)) as StoredThread['scope'], kind: row.kind as StoredThread['kind'],
       ...(row.agentId === null || row.agentId === undefined ? {} : { agentId: String(row.agentId) }),
       status: row.status as StoredThread['status'], createdBy: String(row.createdBy), createdAt: Number(row.createdAt),
+    };
+  }
+
+  private message(row: Record<string, unknown>): StoredMessage {
+    return {
+      id: String(row.id), threadId: String(row.threadId), authorId: String(row.authorId), body: String(row.body), mentions: JSON.parse(String(row.mentions)) as string[],
+      createdAt: Number(row.createdAt), status: row.status === 'withdrawn' ? 'withdrawn' : 'visible',
+      ...(row.withdrawnAt === null || row.withdrawnAt === undefined ? {} : { withdrawnAt: Number(row.withdrawnAt) }),
+      ...(row.withdrawnBy === null || row.withdrawnBy === undefined ? {} : { withdrawnBy: String(row.withdrawnBy) }),
+    };
+  }
+
+  private suggestion(row: Record<string, unknown>): StoredSuggestion {
+    return {
+      id: String(row.id), docId: String(row.docId),
+      ...(row.threadId === null || row.threadId === undefined ? {} : { threadId: String(row.threadId) }),
+      ...(row.batchId === null || row.batchId === undefined ? {} : { batchId: String(row.batchId) }),
+      authorId: String(row.authorId), anchor: JSON.parse(String(row.anchor)) as StoredSuggestion['anchor'], newText: String(row.newText),
+      ...(row.rationale === null || row.rationale === undefined ? {} : { rationale: String(row.rationale) }), status: row.status as StoredSuggestion['status'],
+      ...(row.decidedBy === null || row.decidedBy === undefined ? {} : { decidedBy: String(row.decidedBy) }),
+      ...(row.decidedAt === null || row.decidedAt === undefined ? {} : { decidedAt: Number(row.decidedAt) }),
+      ...(row.withdrawnAt === null || row.withdrawnAt === undefined ? {} : { withdrawnAt: Number(row.withdrawnAt) }),
+      ...(row.withdrawnBy === null || row.withdrawnBy === undefined ? {} : { withdrawnBy: String(row.withdrawnBy) }), createdAt: Number(row.createdAt),
     };
   }
 }
