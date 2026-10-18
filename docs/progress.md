@@ -290,3 +290,10 @@
 - 偏离与决定：Markdown 结构保护放在 review 纯逻辑层并由 agent 复用，避免 UI 或某个标题特例；版本快照采用接受前全文状态，恢复通过现有 Yjs/WebSocket/local-project 链路广播。详见 `docs/decisions.md`。
 - 已知问题：历史数据在版本快照功能上线前没有可恢复快照；完整 CommonMark/GFM 语法仍按 M37 的轻量子集处理。当前版本列表按文档返回，范围抽屉优先显示与当前建议关联的回退入口。
 - 下一步建议：重启本地服务后，用一个包含标题、列表、表格和代码块的真实 Markdown 文档执行“评论 → Agent 建议 → 接受 → 恢复”回归，确认结构保护和跨客户端同步。
+
+### M42 报告：范围讨论未读状态与空段落入口
+- 完成情况：✅ 新增按 principal 隔离的 thread read marker，SQLite 与内存仓储均持久化读取时间；✅ 线程列表按最新消息或建议计算 `unread`，正文范围标记和全局线程列表显示未读状态；✅ 打开范围或全局线程后立即写入已读状态，发送新消息后同步保持已读；✅ 点击没有历史讨论的 Markdown 块或源码行可打开空的段落讨论抽屉，发布第一条评论后再创建范围线程；✅ Markdown 预览接入脚注、引用式链接、数学块和原始 HTML 的安全文本展示，并保留源码区间映射。
+- 如何验证：`corepack pnpm typecheck`；`corepack pnpm lint`；`corepack pnpm exec vitest run packages/review/test/review.test.ts --run`（16 tests）；`git diff --check`。
+- 偏离与决定：未读状态按当前 principal 存在服务端 SQLite，而不是只在浏览器临时计算；原始 HTML 和数学内容继续以安全文本/代码样式展示，不执行 HTML 或公式引擎，避免改变纯文本协作模型。
+- 已知问题：版本历史仍按已有快照语义提供恢复；跨段 relatedEdits 的线程归属和 detached 范围的独立历史入口仍需后续产品设计。
+- 下一步建议：在 Chrome 中使用两个账号分别打开同一段落，验证一方发消息、另一方看到未读标记并打开后消失，再执行建议接受与版本回退回归。

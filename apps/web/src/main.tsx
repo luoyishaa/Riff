@@ -96,6 +96,7 @@ type Thread = {
   createdAt: number;
   scope: { type: 'range'; anchor: unknown; resolved?: ReviewResolution } | { type: 'document' };
   messages: Message[];
+  unread?: boolean;
 };
 type ReviewResolution = { status: 'exact' | 'relocated' | 'detached'; start?: number; end?: number };
 type Message = {
@@ -125,6 +126,9 @@ type DocumentVersion = {
   id: string;
   docId: string;
   suggestionId: string;
+  kind?: 'suggestion' | 'restore';
+  phase?: 'before' | 'after';
+  sourceVersionId?: string;
   threadId?: string;
   text: string;
   createdBy: string;
@@ -513,8 +517,10 @@ function App(): React.ReactElement {
   const [threads, setThreads] = useState<Thread[]>([]);
   const [suggestions, setSuggestions] = useState<Suggestion[]>([]);
   const [versions, setVersions] = useState<DocumentVersion[]>([]);
+  const [showVersionHistory, setShowVersionHistory] = useState(false);
   const [activeThreadId, setActiveThreadId] = useState<string | null>(null);
   const [rangeThreadId, setRangeThreadId] = useState<string | null>(null);
+  const [rangeDraft, setRangeDraft] = useState<Selection | null>(null);
   const [selectedRange, setSelectedRange] = useState<Selection | null>(null);
   const [outlineTarget, setOutlineTarget] = useState<Selection | null>(null);
   const [editorViewMode, setEditorViewMode] = useState<'source' | 'preview'>('source');
@@ -604,7 +610,7 @@ function App(): React.ReactElement {
   const reviewMarkers: ReviewMarker[] = [
     ...threads.flatMap((thread) => {
       if (thread.scope.type !== 'range' || !thread.scope.resolved || thread.scope.resolved.start === undefined || thread.scope.resolved.end === undefined) return [];
-      return [{ id: `thread:${thread.id}`, threadId: thread.id, start: thread.scope.resolved.start, end: thread.scope.resolved.end, kind: 'thread' as const, status: thread.status }];
+      return [{ id: `thread:${thread.id}`, threadId: thread.id, start: thread.scope.resolved.start, end: thread.scope.resolved.end, kind: 'thread' as const, status: thread.status, ...(thread.unread === undefined ? {} : { unread: thread.unread }) }];
     }),
     ...suggestions.flatMap((suggestion) => {
       if (!suggestion.resolved || suggestion.resolved.start === undefined || suggestion.resolved.end === undefined) return [];
@@ -768,6 +774,7 @@ function App(): React.ReactElement {
     setSelectedRange(null);
     setActiveThreadId(null);
     setRangeThreadId(null);
+    setRangeDraft(null);
     setVersions([]);
     setDocumentAction(null);
     setComment('');
@@ -1193,6 +1200,10 @@ function App(): React.ReactElement {
       setMentionState(null);
     }
   };
+  const markThreadRead = async (threadId: string) => {
+    await request(`/api/threads/${threadId}/read`, { method: 'POST', headers, body: '{}' });
+    setThreads((current) => current.map((item) => item.id === threadId ? { ...item, unread: false } : item));
+  };
   const createComment = async (body = comment) => {
     if (!doc || !body.trim()) return;
     const scope = documentAction === 'comment'
@@ -1215,11 +1226,13 @@ function App(): React.ReactElement {
       headers,
       body: JSON.stringify({ body }),
     });
+    await markThreadRead(thread.id);
     setComment('');
     setMentionState(null);
     setDocumentAction(null);
     if (scope.type === 'range') {
       setRangeThreadId(thread.id);
+      setRangeDraft(null);
       setActiveThreadId(null);
     } else {
       setActiveThreadId(thread.id);
@@ -1234,17 +1247,24 @@ function App(): React.ReactElement {
       headers,
       body: JSON.stringify({ body: comment }),
     });
+    await markThreadRead(activeThread.id);
     setComment('');
     setMentionState(null);
     await reloadReview(activeThread.docId);
   };
   const sendRangeMessage = async () => {
-    if (!rangeThread || !comment.trim()) return;
+    if (!comment.trim()) return;
+    if (!rangeThread && rangeDraft) {
+      await createComment(comment);
+      return;
+    }
+    if (!rangeThread) return;
     await request(`/api/threads/${rangeThread.id}/messages`, {
       method: 'POST',
       headers,
       body: JSON.stringify({ body: comment }),
     });
+    await markThreadRead(rangeThread.id);
     setComment('');
     setMentionState(null);
     await reloadReview(rangeThread.docId);
@@ -1273,7 +1293,7 @@ function App(): React.ReactElement {
   };
   const restoreVersion = async (version: DocumentVersion) => {
     if (!doc || !['editor', 'owner'].includes(role)) return;
-    if (!window.confirm('恢复后正文会回到这次修改之前的版本，之后的修改仍可从历史中再次恢复。确定继续吗？')) return;
+    if (!window.confirm('恢复后正文会回到所选历史版本；当前正文会自动保存为一个可回退的安全版本。确定继续吗？')) return;
     const result = await request<{ ok: boolean; document: string }>(`/api/docs/${doc.id}/versions/${version.id}/restore`, { method: 'POST', headers, body: '{}' });
     if (!result?.ok) {
       setSuggestionMessage('版本恢复失败，请检查当前编辑权限。');
@@ -1281,7 +1301,7 @@ function App(): React.ReactElement {
     }
     setText(result.document);
     setDoc((current) => current && current.id === doc.id ? { ...current, text: result.document } : current);
-    setSuggestionMessage('已恢复到这次修改之前的版本。');
+    setSuggestionMessage('已恢复到所选历史版本，恢复前的正文也已保存到版本历史。');
     await reloadReview(doc.id);
   };
   const withdrawSuggestion = async (suggestionId: string) => {
@@ -1317,7 +1337,7 @@ function App(): React.ReactElement {
   };
   const renderSuggestionCard = (suggestion: Suggestion, legacy = false) => {
     const quote = (suggestion.anchor as AnchorPreview).quote;
-    const version = versions.find((item) => item.suggestionId === suggestion.id);
+    const version = versions.find((item) => item.suggestionId === suggestion.id && item.phase !== 'after');
     const withdrawn = suggestion.withdrawnAt !== undefined;
     return <div className={`thread-suggestion ${legacy ? 'legacy' : ''} ${withdrawn ? 'withdrawn' : suggestion.status}`} key={suggestion.id} onClick={(event) => event.stopPropagation()}>
       <div className="suggestion-row-head"><span className={`state-chip ${withdrawn ? 'withdrawn' : suggestion.status}`}>{withdrawn ? '已撤回' : suggestion.status === 'pending' ? '待审批' : suggestion.status === 'accepted' ? '已接受' : suggestion.status === 'rejected' ? '已拒绝' : '已过期'}</span><span className="suggestion-author">{workspaceMembers.find((member) => member.id === suggestion.authorId)?.displayName ?? 'Agent'} 提出的修改</span></div>
@@ -1333,6 +1353,7 @@ function App(): React.ReactElement {
       {suggestion.status === 'pending' && !withdrawn && ['editor', 'owner'].includes(role) && editingSuggestionId !== suggestion.id ? <div className="row-actions"><button className="subtle-button" type="button" onClick={() => beginSuggestionEdit(suggestion)}>编辑修改</button><button className="subtle-button" type="button" onClick={() => void decide(suggestion.id, 'accept')}>接受</button><button className="subtle-button danger" type="button" onClick={() => void decide(suggestion.id, 'reject')}>拒绝</button></div> : null}
       {suggestion.status === 'stale' && ['suggester', 'editor', 'owner'].includes(role) ? <div className="row-actions"><button className="subtle-button" type="button" onClick={() => void decide(suggestion.id, 'regenerate')}>重新生成</button></div> : null}
       {suggestion.status === 'accepted' && version && ['editor', 'owner'].includes(role) ? <div className="row-actions version-actions"><button className="subtle-button" type="button" onClick={() => void restoreVersion(version)}>恢复到这次修改前</button><small>可从历史继续回退</small></div> : null}
+      {suggestion.status === 'accepted' && !version ? <small className="version-unavailable">这条建议没有可恢复快照（创建于版本历史启用前）。</small> : null}
     </div>;
   };
   const resetNewWorkspaceDraft = () => {
@@ -1732,6 +1753,7 @@ function App(): React.ReactElement {
     const thread = threads.find((item) => item.id === threadId);
     if (thread?.scope.type === 'range') {
       setRangeThreadId(threadId);
+      setRangeDraft(null);
       setActiveThreadId(null);
     } else {
       setActiveThreadId(threadId);
@@ -1739,6 +1761,26 @@ function App(): React.ReactElement {
     }
     setDocumentAction(null);
     setSelectedRange(marker ? { start: marker.start, end: marker.end } : null);
+    setTab('comments');
+    void markThreadRead(threadId);
+  };
+  const openBlockDiscussion = (range: Selection) => {
+    if (!doc || range.start >= range.end) return;
+    const existing = threads
+      .filter((thread) => {
+        if (thread.scope.type !== 'range' || thread.scope.resolved?.start === undefined || thread.scope.resolved.end === undefined) return false;
+        return thread.scope.resolved.start < range.end && thread.scope.resolved.end > range.start;
+      })
+      .sort((left, right) => Number(right.unread ?? false) - Number(left.unread ?? false) || (left.scope.type === 'range' && right.scope.type === 'range' ? (left.scope.resolved?.end ?? 0) - (left.scope.resolved?.start ?? 0) - ((right.scope.resolved?.end ?? 0) - (right.scope.resolved?.start ?? 0)) : 0))[0];
+    if (existing) {
+      openReviewMarker(`thread:${existing.id}`);
+      return;
+    }
+    setRangeDraft(range);
+    setRangeThreadId(null);
+    setSelectedRange(range);
+    setActiveThreadId(null);
+    setDocumentAction(null);
     setTab('comments');
   };
   if (authState === 'loading') {
@@ -1994,6 +2036,15 @@ function App(): React.ReactElement {
                 '拖动选择文字后开始协作'
               )}
             </div>
+            <button
+              className="subtle-button version-history-trigger"
+              type="button"
+              onClick={() => setShowVersionHistory(true)}
+              disabled={!doc || versions.length === 0}
+              title={versions.length ? '查看并恢复历史版本' : '接受建议后会在这里保留版本'}
+            >
+              版本历史{versions.length ? ` ${versions.length}` : ''}
+            </button>
           </div>
           <div className="editor-stage">
             <CodeMirrorEditor
@@ -2032,6 +2083,7 @@ function App(): React.ReactElement {
               }}
               reviewMarkers={reviewMarkers}
               onReviewMarkerClick={openReviewMarker}
+              onBlockClick={openBlockDiscussion}
               members={workspaceMembers}
               onInlineActionSubmit={(_action, body) => void createComment(body)}
               onViewModeChange={setEditorViewMode}
@@ -2175,10 +2227,11 @@ function App(): React.ReactElement {
                 <div className="panel-list-heading"><span>全局讨论</span><span>{globalThreads.length} 个全局线程</span></div>
                 <div className="thread-list">
                   {visibleThreads.length ? visibleThreads.map((thread) => (
-                    <div className={`thread-row ${thread.id === activeThreadId ? 'active' : ''}`} key={thread.id} onClick={() => setActiveThreadId(thread.id)}>
+                    <div className={`thread-row ${thread.id === activeThreadId ? 'active' : ''}${thread.unread ? ' unread' : ''}`} key={thread.id} onClick={() => { setActiveThreadId(thread.id); void markThreadRead(thread.id); }}>
                       <div className="thread-row-head">
                         <span className={`state-chip ${thread.status}`}>{thread.status === 'open' ? '进行中' : '已解决'}</span>
                         <span className="thread-type">{thread.kind === 'task' ? '任务' : '讨论'}</span>
+                        {thread.unread ? <span className="thread-unread-dot" aria-label="有未读消息" title="有未读消息" /> : null}
                       </div>
                       {thread.messages.slice().sort((left, right) => right.createdAt - left.createdAt).slice(0, 2).map((message) => (
                         <p key={message.id}>
@@ -2199,21 +2252,56 @@ function App(): React.ReactElement {
         </aside>
       </section>
       <Modal
-        open={rangeThread !== undefined}
+        open={showVersionHistory}
+        title="版本历史"
+        description="每次接受修改前后都会保存不可变版本；恢复操作也会先保存当前正文，随时可以来回切换。"
+        className="version-history-modal"
+        onClose={() => setShowVersionHistory(false)}
+      >
+        <div className="version-history-current">
+          <span className="state-chip open">当前正文</span>
+          <p>{text.slice(0, 220).replace(/\s+/gu, ' ').trim() || '（空文档）'}{text.length > 220 ? '…' : ''}</p>
+        </div>
+        <div className="version-history-list">
+          {versions.slice().sort((left, right) => right.createdAt - left.createdAt || right.id.localeCompare(left.id)).map((version) => {
+            const suggestion = suggestions.find((item) => item.id === version.suggestionId);
+            const actor = workspaceMembers.find((member) => member.id === version.createdBy)?.displayName ?? version.createdBy;
+            const label = version.kind === 'restore' ? '恢复前安全版本' : version.phase === 'after' ? '接受修改后的版本' : suggestion ? '接受修改前版本' : '历史版本';
+            return (
+              <article className="version-history-item" key={version.id}>
+                <div className="version-history-item-head">
+                  <div><strong>{label}</strong><small>{actor} · {new Date(version.createdAt).toLocaleString()}</small></div>
+                  <button className="subtle-button" type="button" onClick={() => void restoreVersion(version)} disabled={!['editor', 'owner'].includes(role)}>恢复此版本</button>
+                </div>
+                {suggestion ? <small className="version-history-related">关联建议：{suggestion.status === 'accepted' ? '已接受' : suggestion.status}</small> : null}
+                <details>
+                  <summary>查看此版本正文</summary>
+                  <pre>{version.text || '（空文档）'}</pre>
+                </details>
+              </article>
+            );
+          })}
+        </div>
+        {!versions.length ? <div className="empty-state compact">还没有可恢复的历史版本。接受一条修改后会自动保存。</div> : null}
+      </Modal>
+      <Modal
+        open={rangeThread !== undefined || rangeDraft !== null}
         title="段落讨论"
         description="这段文字的评论、Agent 回复和修改记录会按最新时间显示在上方。"
         variant="drawer"
         className="range-thread-surface"
-        onClose={() => { setRangeThreadId(null); setSelectedRange(null); setComment(''); setMentionState(null); }}
+        onClose={() => { setRangeThreadId(null); setRangeDraft(null); setSelectedRange(null); setComment(''); setMentionState(null); }}
       >
-        {rangeThread ? (
+        {rangeThread || rangeDraft ? (
           <div className="range-thread-modal">
             <div className="range-thread-quote">
               <span>当前段落</span>
-              <blockquote>{(rangeThread.scope.type === 'range' ? (rangeThread.scope.anchor as AnchorPreview).quote : undefined) || '这段文字已被修改，原始引用暂不可见。'}</blockquote>
+              <blockquote>{rangeThread
+                ? ((rangeThread.scope.type === 'range' ? (rangeThread.scope.anchor as AnchorPreview).quote : undefined) || '这段文字已被修改，原始引用暂不可见。')
+                : text.slice(rangeDraft?.start ?? 0, rangeDraft?.end ?? 0)}</blockquote>
             </div>
             <div className="range-thread-toolbar">
-              <span>{rangeThread.status === 'open' ? '讨论进行中' : '讨论已解决'}</span>
+              <span>{rangeThread ? (rangeThread.status === 'open' ? '讨论进行中' : '讨论已解决') : '开始这段讨论'}</span>
               <span>{rangeTimeline.length} 条记录 · 最新在上</span>
             </div>
             <div className="range-thread-timeline">
@@ -2259,7 +2347,7 @@ function App(): React.ReactElement {
               ) : null}
               <div className="composer-footer">
                 <span className="range-thread-hint">回复会留在这段文字下面</span>
-                <button className="action-button primary send-button" type="button" onClick={() => void sendRangeMessage()} disabled={!comment.trim()}>回复<span className="send-arrow" aria-hidden="true">↗</span></button>
+                <button className="action-button primary send-button" type="button" onClick={() => void sendRangeMessage()} disabled={!comment.trim() || (!rangeThread && !rangeDraft)}>{rangeThread ? '回复' : '发布评论'}<span className="send-arrow" aria-hidden="true">↗</span></button>
               </div>
             </div>
           </div>

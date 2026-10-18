@@ -6,7 +6,7 @@ import { MarkdownPreview, type MarkdownPreviewAction, type MarkdownPreviewSelect
 import { InlineSelectionComposer, type InlineMember } from './InlineSelectionComposer.js';
 
 export type EditorSelection = { start: number; end: number };
-export type EditorReviewMarker = { id: string; start: number; end: number; kind: 'thread' | 'suggestion'; status: string };
+export type EditorReviewMarker = { id: string; start: number; end: number; kind: 'thread' | 'suggestion'; status: string; unread?: boolean };
 
 export interface CodeMirrorEditorProps {
   value: string;
@@ -20,6 +20,7 @@ export interface CodeMirrorEditorProps {
   onViewModeChange?: (mode: 'source' | 'preview') => void;
   reviewMarkers?: EditorReviewMarker[];
   onReviewMarkerClick?: (markerId: string) => void;
+  onBlockClick?: (range: EditorSelection) => void;
   /** Source offsets used by the document outline to reveal the matching block. */
   outlineTarget?: EditorSelection | null;
   className?: string;
@@ -36,6 +37,28 @@ function reviewMarkerIdFromTarget(target: EventTarget | null): string | null {
       ? target.parentElement
       : null;
   return element?.closest<HTMLElement>('[data-review-id]')?.dataset.reviewId ?? null;
+}
+
+function markdownBlockBoundary(line: string): boolean {
+  return line.trim() === '' || /^ {0,3}(?:#{1,6}\s|>|[-+*]\s+|\d+[.)]\s+|```|~~~)/.test(line);
+}
+
+function sourceBlockRange(view: EditorView, position: number, markdown: boolean): EditorSelection {
+  const current = view.state.doc.lineAt(position);
+  if (!markdown) return { start: current.from, end: current.to };
+  let startLine = current.number;
+  let endLine = current.number;
+  while (startLine > 1) {
+    const previous = view.state.doc.line(startLine - 1);
+    if (markdownBlockBoundary(previous.text)) break;
+    startLine -= 1;
+  }
+  while (endLine < view.state.doc.lines) {
+    const next = view.state.doc.line(endLine + 1);
+    if (markdownBlockBoundary(next.text)) break;
+    endLine += 1;
+  }
+  return { start: view.state.doc.line(startLine).from, end: view.state.doc.line(endLine).to };
 }
 
 /**
@@ -56,6 +79,7 @@ export function CodeMirrorEditor({
   onViewModeChange,
   reviewMarkers = [],
   onReviewMarkerClick,
+  onBlockClick,
   outlineTarget,
   className,
   documentKind = 'text',
@@ -69,16 +93,20 @@ export function CodeMirrorEditor({
   const editableCompartmentRef = useRef<Compartment | null>(null);
   const markerCompartmentRef = useRef<Compartment | null>(null);
   const onReviewMarkerClickRef = useRef(onReviewMarkerClick);
+  const onBlockClickRef = useRef(onBlockClick);
   const reviewMarkersRef = useRef(reviewMarkers);
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
   const [sourceMenu, setSourceMenu] = useState<{ top: number; left: number } | null>(null);
   const [sourceComposer, setSourceComposer] = useState<{ top: number; left: number } | null>(null);
   const pointerSelectingRef = useRef(false);
   const isMarkdown = documentKind === 'markdown';
+  const isMarkdownRef = useRef(isMarkdown);
 
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
   onReviewMarkerClickRef.current = onReviewMarkerClick;
+  onBlockClickRef.current = onBlockClick;
+  isMarkdownRef.current = isMarkdown;
   reviewMarkersRef.current = reviewMarkers;
   valueRef.current = value;
 
@@ -161,9 +189,17 @@ export function CodeMirrorEditor({
       const markerId = directMarkerId ?? (position === null ? null : reviewMarkersRef.current
         .filter((marker) => marker.start <= position && position < marker.end)
         .sort((left, right) => (left.end - left.start) - (right.end - right.start))[0]?.id ?? null);
-      if (!markerId) return;
-      onReviewMarkerClickRef.current?.(markerId);
-      event.stopPropagation();
+      if (markerId) {
+        onReviewMarkerClickRef.current?.(markerId);
+        event.stopPropagation();
+        return;
+      }
+      if (onBlockClickRef.current) {
+        const position = view.posAtCoords({ x: event.clientX, y: event.clientY });
+        if (position !== null && view.state.selection.main.empty) {
+          onBlockClickRef.current(sourceBlockRange(view, position, isMarkdownRef.current));
+        }
+      }
     };
     editorHost.addEventListener('click', handleReviewMarkerClick, true);
 
@@ -240,7 +276,7 @@ export function CodeMirrorEditor({
       reviewMarkers
         .filter((marker) => marker.start >= 0 && marker.end > marker.start && marker.end <= view.state.doc.length)
         .map((marker) => Decoration.mark({
-          class: marker.kind === 'suggestion' ? 'cm-review-range cm-review-suggestion' : 'cm-review-range cm-review-thread',
+          class: `${marker.kind === 'suggestion' ? 'cm-review-range cm-review-suggestion' : 'cm-review-range cm-review-thread'}${marker.unread ? ' cm-review-unread' : ''}`,
           attributes: { 'data-review-id': marker.id },
         }).range(marker.start, marker.end)),
       true,
@@ -329,6 +365,7 @@ export function CodeMirrorEditor({
             {...(onInlineActionSubmit ? { onInlineActionSubmit } : {})}
             reviewMarkers={reviewMarkers as MarkdownReviewMarker[]}
             {...(onReviewMarkerClick ? { onReviewMarkerClick } : {})}
+            {...(onBlockClick ? { onBlockClick } : {})}
             members={members}
           />
         </div>

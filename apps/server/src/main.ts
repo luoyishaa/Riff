@@ -803,12 +803,17 @@ app.get<{ Params: { id: string } }>('/api/docs/:id/threads', async (request, rep
   if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
   const document = store.get(request.params.id)?.handle;
   return reviewStore.listThreads(request.params.id).map((thread) => {
-    if (thread.scope.type !== 'range' || !document) return { ...thread, messages: reviewStore.listMessages(thread.id) };
+    const messages = reviewStore.listMessages(thread.id);
+    const suggestions = reviewStore.listSuggestions(request.params.id).filter((suggestion) => suggestion.threadId === thread.id);
+    const latestActivity = Math.max(0, ...messages.map((message) => message.createdAt), ...suggestions.map((suggestion) => suggestion.decidedAt ?? suggestion.createdAt));
+    const readAt = reviewStore.getThreadReadAt(thread.id, principalId);
+    const unread = latestActivity > 0 && (readAt === undefined || latestActivity > readAt);
+    if (thread.scope.type !== 'range' || !document) return { ...thread, unread, messages };
     const resolved = resolveAnchor(document, thread.scope.anchor);
     const range = resolved.status === 'detached'
       ? { status: resolved.status }
       : { status: resolved.status, start: resolved.start, end: resolved.end };
-    return { ...thread, scope: { ...thread.scope, resolved: range }, messages: reviewStore.listMessages(thread.id) };
+    return { ...thread, unread, scope: { ...thread.scope, resolved: range }, messages };
   });
 });
 app.get<{ Params: { id: string } }>('/api/docs/:id/suggestions', async (request, reply) => {
@@ -1031,6 +1036,15 @@ app.post<{ Params: { id: string } }>('/api/threads/:id/messages', async (request
   const result = reviewService.addMessage({ threadId: thread.id, authorId: principalId, body: parsed.data.body, mentions, authorRole: role });
   if (!result.ok) return fail(reply, 400, result.error, 'Unable to add message');
   return result.value;
+});
+app.post<{ Params: { id: string } }>('/api/threads/:id/read', async (request, reply) => {
+  const thread = reviewStore.getThread(request.params.id);
+  if (!thread) return fail(reply, 404, 'thread-not-found', 'Thread was not found');
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(thread.docId, principalId);
+  if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  reviewStore.saveThreadReadAt(thread.id, principalId, systemClock.now());
+  return { ok: true, threadId: thread.id, readAt: reviewStore.getThreadReadAt(thread.id, principalId) };
 });
 app.post<{ Params: { id: string } }>('/api/messages/:id/withdraw', async (request, reply) => {
   const message = reviewStore.getMessage(request.params.id);

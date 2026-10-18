@@ -9,6 +9,9 @@ export interface ReviewRepository {
   listThreads(docId: string): Thread[];
   /** Insert or replace the complete aggregate record. */
   saveThread(thread: Thread): void;
+  /** Read markers are kept per viewer so unread state does not leak between members. */
+  getThreadReadAt(threadId: string, principalId: string): number | undefined;
+  saveThreadReadAt(threadId: string, principalId: string, readAt: number): void;
   getMessage(id: string): Message | undefined;
   listMessages(threadId: string): Message[];
   /** Insert or replace the complete message record. */
@@ -34,12 +37,15 @@ export class MemoryReviewRepository implements ReviewRepository {
   private readonly suggestions = new Map<string, Suggestion>();
   private readonly batches = new Map<string, Batch>();
   private readonly versions = new Map<string, DocumentVersion>();
+  private readonly threadReads = new Map<string, number>();
 
   getThread(id: string): Thread | undefined { return this.threads.get(id); }
   listThreads(docId: string): Thread[] {
     return [...this.threads.values()].filter((thread) => thread.docId === docId);
   }
   saveThread(thread: Thread): void { this.threads.set(thread.id, thread); }
+  getThreadReadAt(threadId: string, principalId: string): number | undefined { return this.threadReads.get(`${threadId}:${principalId}`); }
+  saveThreadReadAt(threadId: string, principalId: string, readAt: number): void { this.threadReads.set(`${threadId}:${principalId}`, readAt); }
   getMessage(id: string): Message | undefined { return this.messages.get(id); }
   listMessages(threadId: string): Message[] {
     return [...this.messages.values()].filter((message) => message.threadId === threadId);
