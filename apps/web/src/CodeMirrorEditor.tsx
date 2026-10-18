@@ -83,8 +83,9 @@ export function CodeMirrorEditor({
         ]),
         EditorView.theme({
           '&': { height: '480px', backgroundColor: '#fcfbf8', color: '#25231f' },
+          '.cm-editor': { fontSize: '13px' },
           '.cm-scroller': { overflow: 'auto', fontFamily: 'inherit', lineHeight: '1.78' },
-          '.cm-content': { padding: '34px 34px', minHeight: '448px', maxWidth: '78ch' },
+          '.cm-content': { padding: 'var(--document-top-padding, 34px) var(--document-inline-padding, 34px)', minHeight: '448px', maxWidth: '78ch' },
           '.cm-line': { padding: '0 0 2px' },
           '.cm-gutters': { borderRight: '1px solid #e7e1d7', backgroundColor: '#f8f6f0', color: '#a49e93' },
           '.cm-activeLine': { backgroundColor: '#f7f1eb' },

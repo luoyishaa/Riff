@@ -303,7 +303,13 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .editor-stage { overflow: hidden; min-height: 480px; background: var(--paper-light); border: 1px solid var(--line); box-shadow: var(--shadow); }
 .cm-editor-shell { width: 100%; min-height: 480px; }
 .document-editor-shell { min-height: 480px; background: var(--paper-light); }
-.document-editor-shell-markdown { display: flex; flex-direction: column; }
+.document-editor-shell-markdown {
+  --document-gutter-width: 36px;
+  --document-inline-padding: 34px;
+  --document-top-padding: 34px;
+  display: flex;
+  flex-direction: column;
+}
 .document-editor-view-switch { display: flex; align-items: center; gap: 2px; min-height: 38px; padding: 5px 10px; background: var(--paper); border-bottom: 1px solid var(--line); }
 .document-editor-view-button { min-height: 27px; padding: 0 11px; color: var(--muted); background: transparent; border: 1px solid transparent; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 650; }
 .document-editor-view-button:hover { color: var(--ink); background: var(--paper-deep); }
@@ -312,8 +318,19 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .document-editor-pane { flex: 1; min-height: 0; }
 .document-editor-source-pane { position: relative; }
 .document-editor-pane.is-hidden { display: none; }
-.document-editor-preview-pane { overflow: auto; min-height: 480px; padding: 34px clamp(24px, 5vw, 66px) 48px; color: var(--ink); background: var(--paper-light); }
-.markdown-preview { position: relative; max-width: 78ch; margin: 0 auto; font-size: 13px; line-height: 1.78; overflow-wrap: anywhere; }
+.document-editor-preview-pane { overflow: auto; min-height: 480px; padding: 0; color: var(--ink); background: var(--paper-light); }
+.markdown-preview {
+  position: relative;
+  width: 100%;
+  max-width: calc(78ch + var(--document-gutter-width, 36px) + (var(--document-inline-padding, 34px) * 2));
+  min-height: 100%;
+  box-sizing: border-box;
+  margin: 0;
+  padding: var(--document-top-padding, 34px) var(--document-inline-padding, 34px) 48px calc(var(--document-gutter-width, 36px) + var(--document-inline-padding, 34px));
+  font-size: 13px;
+  line-height: 1.78;
+  overflow-wrap: anywhere;
+}
 .markdown-selection-menu { position: absolute; z-index: 5; display: inline-flex; align-items: center; gap: 2px; padding: 3px; color: var(--ink-soft); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 8px 22px rgba(51, 37, 27, .14); white-space: nowrap; }
 .markdown-selection-menu::before { content: ""; position: absolute; top: -5px; left: 18px; width: 8px; height: 8px; background: var(--paper); border-top: 1px solid var(--line); border-left: 1px solid var(--line); transform: rotate(45deg); }
 .markdown-selection-menu button { position: relative; min-height: 27px; padding: 3px 8px; color: var(--ink-soft); background: transparent; border: 0; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 650; }
@@ -346,11 +363,11 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .markdown-inline-comment-actions button.primary { color: var(--paper-light); background: var(--accent); border-color: var(--accent); }
 .markdown-inline-comment-actions button.primary:hover, .markdown-inline-comment-actions button.primary:focus-visible { color: var(--paper-light); background: var(--accent-dark); }
 .markdown-inline-comment-actions button:disabled { color: var(--faint); background: transparent; border-color: var(--line-soft); cursor: not-allowed; }
-.markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { margin: 0 0 12px; color: var(--ink); font-family: Georgia, "Times New Roman", serif; line-height: 1.25; letter-spacing: -.02em; }
-.markdown-preview h1 { font-size: 28px; }
-.markdown-preview h2 { margin-top: 28px; font-size: 23px; }
-.markdown-preview h3 { margin-top: 22px; font-size: 19px; }
-.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { margin-top: 18px; font-size: 16px; }
+.markdown-preview h1, .markdown-preview h2, .markdown-preview h3, .markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { margin: 0 0 12px; color: var(--ink); font-family: inherit; font-weight: 700; line-height: 1.25; letter-spacing: -.02em; }
+.markdown-preview h1 { font-size: 22px; }
+.markdown-preview h2 { margin-top: 24px; font-size: 18px; }
+.markdown-preview h3 { margin-top: 19px; font-size: 16px; }
+.markdown-preview h4, .markdown-preview h5, .markdown-preview h6 { margin-top: 15px; font-size: 14px; }
 .markdown-preview p { margin: 0 0 16px; white-space: pre-wrap; }
 .markdown-preview ul, .markdown-preview ol { margin: 0 0 16px; padding-left: 24px; }
 .markdown-preview li + li { margin-top: 5px; }
@@ -700,7 +717,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
   .editor-toolbar { align-items: flex-start; flex-direction: column; }
   .selection-status { width: 100%; }
   .editor-stage, .cm-editor-shell, .document-editor-shell, .document-editor-preview-pane { min-height: 390px; }
-  .document-editor-preview-pane { padding: 24px 20px 34px; }
+  .document-editor-shell-markdown { --document-gutter-width: 32px; --document-inline-padding: 20px; --document-top-padding: 24px; }
+  .document-editor-preview-pane { padding: 0; }
   .editor-statusbar { flex-wrap: wrap; gap: 8px; }
   .shortcut-hint { display: none; }
   .inspector { min-height: 500px; }

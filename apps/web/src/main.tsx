@@ -2066,10 +2066,9 @@ function App(): React.ReactElement {
                 </div> : (
                   <div className="document-action-card">
                     <strong>从正文开始协作</strong>
-                    <p>选中文字后会在原文旁出现操作浮窗。没有选区时，可以从这里发起整篇文档的讨论或建议。</p>
+                    <p>选中文字后会在原文旁出现操作浮窗。没有选区时，可以从这里发起整篇文档的讨论。</p>
                     <div className="document-action-buttons">
                       <button className="subtle-button" type="button" disabled={!['commenter', 'suggester', 'editor', 'owner'].includes(role)} onClick={() => openDocumentAction('comment')}>评论整篇文档</button>
-                      <button className="subtle-button" type="button" disabled={!['suggester', 'editor', 'owner'].includes(role)} onClick={() => openDocumentAction('suggestion')}>建议修改整篇</button>
                     </div>
                   </div>
                 )}
