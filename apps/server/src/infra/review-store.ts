@@ -19,7 +19,8 @@ export class ReviewStore implements ReviewRepository {
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
-      CREATE TABLE IF NOT EXISTS document_versions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, suggestion_id TEXT NOT NULL, thread_id TEXT, text TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS document_versions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, suggestion_id TEXT NOT NULL, kind TEXT NOT NULL DEFAULT 'suggestion', phase TEXT, source_version_id TEXT, thread_id TEXT, text TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS thread_reads (thread_id TEXT NOT NULL, principal_id TEXT NOT NULL, read_at INTEGER NOT NULL, PRIMARY KEY (thread_id, principal_id));
       CREATE INDEX IF NOT EXISTS threads_doc_created ON threads(doc_id, created_at);
       CREATE INDEX IF NOT EXISTS messages_thread_created ON messages(thread_id, created_at);
       CREATE INDEX IF NOT EXISTS suggestions_doc_status ON suggestions(doc_id, status);
@@ -30,6 +31,9 @@ export class ReviewStore implements ReviewRepository {
     try { this.db.exec('ALTER TABLE messages ADD COLUMN withdrawn_by TEXT'); } catch { /* Existing databases already have the column. */ }
     try { this.db.exec('ALTER TABLE suggestions ADD COLUMN withdrawn_at INTEGER'); } catch { /* Existing databases already have the column. */ }
     try { this.db.exec('ALTER TABLE suggestions ADD COLUMN withdrawn_by TEXT'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec("ALTER TABLE document_versions ADD COLUMN kind TEXT NOT NULL DEFAULT 'suggestion'"); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE document_versions ADD COLUMN phase TEXT'); } catch { /* Existing databases already have the column. */ }
+    try { this.db.exec('ALTER TABLE document_versions ADD COLUMN source_version_id TEXT'); } catch { /* Existing databases already have the column. */ }
   }
   listThreads(docId: string): StoredThread[] {
     return (this.db.prepare('SELECT id, doc_id as docId, scope_json as scope, kind, agent_id as agentId, status, created_by as createdBy, created_at as createdAt FROM threads WHERE doc_id = ? ORDER BY created_at').all(docId) as Array<Record<string, unknown>>).map((row) => this.thread(row));
@@ -42,6 +46,13 @@ export class ReviewStore implements ReviewRepository {
     this.db.prepare('INSERT INTO threads(id, doc_id, scope_json, kind, agent_id, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.agentId ?? null, thread.status, thread.createdBy, thread.createdAt);
   }
   saveThread(thread: Thread): void { this.db.prepare('INSERT OR REPLACE INTO threads(id, doc_id, scope_json, kind, agent_id, status, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)').run(thread.id, thread.docId, JSON.stringify(thread.scope), thread.kind, thread.agentId ?? null, thread.status, thread.createdBy, thread.createdAt); }
+  getThreadReadAt(threadId: string, principalId: string): number | undefined {
+    const row = this.db.prepare('SELECT read_at as readAt FROM thread_reads WHERE thread_id = ? AND principal_id = ?').get(threadId, principalId) as { readAt?: unknown } | undefined;
+    return row?.readAt === undefined ? undefined : Number(row.readAt);
+  }
+  saveThreadReadAt(threadId: string, principalId: string, readAt: number): void {
+    this.db.prepare('INSERT OR REPLACE INTO thread_reads(thread_id, principal_id, read_at) VALUES (?, ?, ?)').run(threadId, principalId, readAt);
+  }
   resolveThread(id: string): void { this.db.prepare('UPDATE threads SET status = \'resolved\' WHERE id = ?').run(id); }
   listMessages(threadId: string): StoredMessage[] {
     return (this.db.prepare('SELECT id, thread_id as threadId, author_id as authorId, body, mentions_json as mentions, status, withdrawn_at as withdrawnAt, withdrawn_by as withdrawnBy, created_at as createdAt FROM messages WHERE thread_id = ? ORDER BY created_at').all(threadId) as Array<Record<string, unknown>>).map((row) => this.message(row));
@@ -69,15 +80,15 @@ export class ReviewStore implements ReviewRepository {
   listBatches(threadId: string): Batch[] { return this.db.prepare('SELECT id, thread_id as threadId, created_by as createdBy, created_at as createdAt FROM batches WHERE thread_id = ? ORDER BY created_at').all(threadId) as unknown as Batch[]; }
   saveBatch(batch: Batch): void { this.db.prepare('INSERT OR REPLACE INTO batches(id, thread_id, created_by, created_at) VALUES (?, ?, ?, ?)').run(batch.id, batch.threadId, batch.createdBy, batch.createdAt); }
   getDocumentVersion(id: string): StoredDocumentVersion | undefined {
-    const row = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    const row = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, kind, phase, source_version_id as sourceVersionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
     return row ? this.documentVersion(row) : undefined;
   }
   listDocumentVersions(docId: string): StoredDocumentVersion[] {
-    const rows = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE doc_id = ? ORDER BY created_at, id').all(docId) as Array<Record<string, unknown>>;
+    const rows = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, kind, phase, source_version_id as sourceVersionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE doc_id = ? ORDER BY created_at, id').all(docId) as Array<Record<string, unknown>>;
     return rows.map((row) => this.documentVersion(row));
   }
   saveDocumentVersion(version: StoredDocumentVersion): void {
-    this.db.prepare('INSERT OR REPLACE INTO document_versions(id, doc_id, suggestion_id, thread_id, text, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(version.id, version.docId, version.suggestionId, version.threadId ?? null, version.text, version.createdBy, version.createdAt);
+    this.db.prepare('INSERT OR REPLACE INTO document_versions(id, doc_id, suggestion_id, kind, phase, source_version_id, thread_id, text, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)').run(version.id, version.docId, version.suggestionId, version.kind ?? 'suggestion', version.phase ?? null, version.sourceVersionId ?? null, version.threadId ?? null, version.text, version.createdBy, version.createdAt);
   }
   transaction<T>(work: () => T): T {
     this.db.exec('BEGIN');
@@ -121,6 +132,9 @@ export class ReviewStore implements ReviewRepository {
       id: String(row.id),
       docId: String(row.docId),
       suggestionId: String(row.suggestionId),
+      kind: row.kind === 'restore' ? 'restore' : 'suggestion',
+      ...(row.phase === 'before' || row.phase === 'after' ? { phase: row.phase } : {}),
+      ...(row.sourceVersionId === null || row.sourceVersionId === undefined ? {} : { sourceVersionId: String(row.sourceVersionId) }),
       ...(row.threadId === null || row.threadId === undefined ? {} : { threadId: String(row.threadId) }),
       text: String(row.text),
       createdBy: String(row.createdBy),

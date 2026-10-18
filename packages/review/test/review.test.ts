@@ -43,6 +43,21 @@ describe('review domain', () => {
     }).error).toBe('permission-denied');
   });
 
+  it('keeps thread read markers separate for each viewer', () => {
+    const { repository, service } = setup();
+    const thread = service.createThread({
+      docId: 'doc-1', scope: { type: 'document' }, kind: 'discussion', createdBy: 'alice', createdByRole: 'commenter',
+    });
+    expect(thread.ok).toBe(true);
+    if (!thread.ok) return;
+    repository.saveThreadReadAt(thread.value.id, 'alice', 100);
+    expect(repository.getThreadReadAt(thread.value.id, 'alice')).toBe(100);
+    expect(repository.getThreadReadAt(thread.value.id, 'bob')).toBeUndefined();
+    repository.saveThreadReadAt(thread.value.id, 'bob', 125);
+    expect(repository.getThreadReadAt(thread.value.id, 'alice')).toBe(100);
+    expect(repository.getThreadReadAt(thread.value.id, 'bob')).toBe(125);
+  });
+
   it('allows authors to withdraw their own messages and pending suggestions', () => {
     const { service, repository } = setup();
     const thread = service.createThread({
@@ -99,12 +114,44 @@ describe('review domain', () => {
     const versions = service.listDocumentVersions('doc-1', 'viewer');
     expect(versions.ok).toBe(true);
     if (!versions.ok) return;
-    expect(versions.value).toHaveLength(1);
-    expect(versions.value[0]).toMatchObject({ docId: 'doc-1', suggestionId: suggestion.value.suggestion.id, text: 'alpha beta', createdBy: 'alice' });
-    const restored = service.restoreDocumentVersion(versions.value[0].id, 'alice', 'editor');
+    expect(versions.value).toHaveLength(2);
+    const before = versions.value.find((version) => version.phase === 'before');
+    const after = versions.value.find((version) => version.phase === 'after');
+    expect(before).toMatchObject({ docId: 'doc-1', suggestionId: suggestion.value.suggestion.id, text: 'alpha beta', createdBy: 'alice' });
+    expect(after).toMatchObject({ docId: 'doc-1', suggestionId: suggestion.value.suggestion.id, text: 'ALPHA beta', createdBy: 'alice' });
+    if (!before) return;
+    const restored = service.restoreDocumentVersion(before.id, 'alice', 'editor');
     expect(restored.ok).toBe(true);
     expect(doc.getText()).toBe('alpha beta');
-    expect(repository.getDocumentVersion(versions.value[0].id)?.text).toBe('alpha beta');
+    expect(repository.getDocumentVersion(before.id)?.text).toBe('alpha beta');
+  });
+
+  it('keeps a safety snapshot so restoring a version is reversible', () => {
+    const { doc, service, repository } = setup('alpha beta');
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const suggestion = service.createSuggestion({ docId: 'doc-1', authorId: 'agent', anchor: anchor.value, newText: 'ALPHA', authorEffectiveRole: 'suggester' });
+    expect(suggestion.ok).toBe(true);
+    if (!suggestion.ok) return;
+    expect(service.acceptSuggestion('doc-1', suggestion.value.suggestion.id, 'alice', 'editor').ok).toBe(true);
+    const beforeAccept = service.listDocumentVersions('doc-1', 'viewer');
+    expect(beforeAccept.ok).toBe(true);
+    if (!beforeAccept.ok) return;
+    const before = beforeAccept.value.find((version) => version.phase === 'before');
+    expect(before).toBeDefined();
+    if (!before) return;
+    expect(service.restoreDocumentVersion(before.id, 'alice', 'editor').ok).toBe(true);
+    expect(doc.getText()).toBe('alpha beta');
+    const versions = service.listDocumentVersions('doc-1', 'viewer');
+    expect(versions.ok).toBe(true);
+    if (!versions.ok) return;
+    const safety = versions.value.find((version) => version.kind === 'restore');
+    expect(safety).toMatchObject({ text: 'ALPHA beta', sourceVersionId: before.id });
+    if (!safety) return;
+    expect(service.restoreDocumentVersion(safety.id, 'alice', 'editor').ok).toBe(true);
+    expect(doc.getText()).toBe('ALPHA beta');
+    expect(repository.getDocumentVersion(safety.id)?.text).toBe('ALPHA beta');
   });
 
   it('does not let viewers restore a document version', () => {

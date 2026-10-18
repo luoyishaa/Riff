@@ -69,6 +69,12 @@ export interface DocumentVersion {
   id: string;
   docId: string;
   suggestionId: string;
+  /** How this snapshot was created. Older rows omit this field and are treated as suggestion snapshots. */
+  kind?: 'suggestion' | 'restore';
+  /** Whether a suggestion snapshot is before or after its accepted edit. */
+  phase?: 'before' | 'after';
+  /** The version that was selected when a restore created a safety snapshot. */
+  sourceVersionId?: string;
   threadId?: string;
   text: string;
   createdBy: string;

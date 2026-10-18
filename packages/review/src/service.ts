@@ -171,14 +171,37 @@ export class ReviewService {
     return { ok: true, value: this.options.repository.listDocumentVersions(docId) };
   }
 
-  /** Restore a document to the text captured before an accepted suggestion. */
+  /**
+   * Restore a document to an immutable historical snapshot.
+   *
+   * Restores are themselves reversible: before changing the live document we
+   * keep a safety snapshot of its current text. This means a reviewer can
+   * move between any previously captured states without losing the state they
+   * just left. A no-op restore does not create duplicate history entries.
+   */
   restoreDocumentVersion(versionId: string, actorId: string, actorRole: Role): Result<DocumentVersion, ReviewError> {
     if (!can(actorRole, 'edit')) return err('permission-denied');
     const version = this.options.repository.getDocumentVersion(versionId);
     if (!version) return err('version-not-found');
     const document = this.options.documents.getDocument(version.docId);
     if (!document) return err('document-not-found');
-    const applied = document.replace(0, document.getText().length, version.text, { principalId: actorId, versionId });
+    const currentText = document.getText();
+    const safetySnapshot: DocumentVersion | undefined = currentText === version.text ? undefined : {
+      id: this.options.ids.next(),
+      docId: version.docId,
+      suggestionId: `restore:${version.id}`,
+      kind: 'restore',
+      phase: 'before',
+      sourceVersionId: version.id,
+      ...(version.threadId === undefined ? {} : { threadId: version.threadId }),
+      text: currentText,
+      createdBy: actorId,
+      createdAt: this.options.clock.now(),
+    };
+    const applied = transact(this.options.repository, () => {
+      if (safetySnapshot) this.options.repository.saveDocumentVersion(safetySnapshot);
+      return document.replace(0, currentText.length, version.text, { principalId: actorId, versionId });
+    });
     if (!applied.ok) return err('range-out-of-bounds');
     return { ok: true, value: version };
   }
@@ -290,6 +313,8 @@ export class ReviewService {
       docId,
       suggestionId,
       ...(suggestion.threadId === undefined ? {} : { threadId: suggestion.threadId }),
+      kind: 'suggestion',
+      phase: 'before',
       text: document.getText(),
       createdBy: deciderId,
       createdAt: this.options.clock.now(),
@@ -302,6 +327,17 @@ export class ReviewService {
         const result = document.replace(resolution.start, resolution.end, suggestion.newText, origin);
         if (!result.ok) return result;
         this.options.repository.saveSuggestion(accepted);
+        this.options.repository.saveDocumentVersion({
+          id: this.options.ids.next(),
+          docId,
+          suggestionId,
+          ...(suggestion.threadId === undefined ? {} : { threadId: suggestion.threadId }),
+          kind: 'suggestion',
+          phase: 'after',
+          text: document.getText(),
+          createdBy: deciderId,
+          createdAt: this.options.clock.now(),
+        });
         for (const candidate of overlapping) {
           const stale: Suggestion = {
             ...candidate,

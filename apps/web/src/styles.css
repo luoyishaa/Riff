@@ -338,6 +338,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .cm-review-range { cursor: pointer; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2px; }
 .cm-review-thread, .markdown-review-thread { text-decoration-color: var(--accent); }
 .cm-review-suggestion, .markdown-review-suggestion { text-decoration-color: #7966a8; }
+.cm-review-unread, .markdown-review-unread { text-decoration-style: double; text-decoration-thickness: 2px; }
 .markdown-review-range { cursor: pointer; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .source-selection-menu { position: absolute; z-index: 6; display: inline-flex; align-items: center; gap: 2px; padding: 3px; color: var(--ink-soft); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 8px 22px rgba(51, 37, 27, .14); white-space: nowrap; }
 .source-selection-menu button { min-height: 27px; padding: 3px 8px; color: var(--ink-soft); background: transparent; border: 0; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 650; }
@@ -457,6 +458,8 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .thread-row, .suggestion-row { padding: 13px 0; border-top: 1px solid var(--line-soft); cursor: pointer; }
 .thread-row:hover, .thread-row.active { margin: 0 -10px; padding-right: 10px; padding-left: 10px; background: #f6eee8; }
 .thread-row.active { box-shadow: inset 2px 0 0 var(--accent); }
+.thread-row.unread { background: #fbf0eb; }
+.thread-unread-dot { width: 6px; height: 6px; margin-left: auto; border-radius: 50%; background: var(--accent); }
 .thread-row-head, .suggestion-row-head { display: flex; align-items: center; gap: 7px; }
 .state-chip { display: inline-flex; align-items: center; min-height: 18px; padding: 2px 6px; color: var(--muted); background: var(--paper-deep); border-radius: 2px; font-size: 9px; font-weight: 700; }
 .state-chip.open, .state-chip.pending { color: var(--accent-dark); background: var(--accent-pale); }
@@ -497,6 +500,20 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .row-actions { display: flex; gap: 5px; margin-top: 10px; }
 .version-actions { align-items: center; gap: 10px; }
 .version-actions small { color: var(--muted); }
+.version-unavailable { display: block; margin-top: 8px; color: var(--muted); font-size: 9px; }
+.version-history-trigger { margin-left: 8px; white-space: nowrap; }
+.version-history-modal { width: min(760px, calc(100vw - 32px)); }
+.version-history-current { display: grid; gap: 7px; margin-bottom: 14px; padding: 10px; background: var(--paper); border: 1px solid var(--line); }
+.version-history-current p { max-height: 44px; margin: 0; overflow: hidden; color: var(--muted); font-size: 10px; line-height: 1.5; }
+.version-history-list { display: grid; gap: 8px; max-height: min(58vh, 560px); overflow: auto; }
+.version-history-item { display: grid; gap: 8px; padding: 11px; background: var(--paper-light); border: 1px solid var(--line); }
+.version-history-item-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+.version-history-item-head > div { display: grid; gap: 3px; min-width: 0; }
+.version-history-item-head strong { color: var(--ink); font-size: 11px; }
+.version-history-item-head small, .version-history-related { color: var(--muted); font-size: 9px; }
+.version-history-item details { border-top: 1px solid var(--line-soft); padding-top: 7px; }
+.version-history-item summary { color: var(--muted); cursor: pointer; font-size: 9px; }
+.version-history-item pre { max-height: 180px; margin: 7px 0 0; overflow: auto; color: var(--ink-soft); white-space: pre-wrap; font: inherit; font-size: 10px; line-height: 1.55; }
 .suggestion-row.accepted, .suggestion-row.rejected, .suggestion-row.stale { opacity: .8; }
 .suggestion-row.withdrawn { opacity: .65; }
 .thread-suggestion { margin: 10px 0 0 14px; padding: 9px 10px; background: #f8f4ee; border-left: 2px solid #7966a8; }
