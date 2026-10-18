@@ -466,6 +466,7 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .state-chip.withdrawn { color: var(--muted); background: var(--paper-deep); }
 .thread-type, .thread-anchor, .suggestion-author { color: var(--muted); font-size: 10px; }
 .thread-anchor { margin-left: auto; }
+.thread-anchor.detached { color: var(--faint); }
 .thread-row p { display: grid; grid-template-columns: auto 1fr; gap: 5px; margin: 9px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
 .thread-row p b { color: var(--ink); font-weight: 650; }
 .withdrawn-copy { color: var(--faint); font-style: italic; }

@@ -597,7 +597,12 @@ function App(): React.ReactElement {
   ];
   const globalThreads = threads.filter((thread) => thread.scope.type === 'document');
   const activeRangeThread = activeThreadId ? threads.find((thread) => thread.id === activeThreadId && thread.scope.type === 'range') : undefined;
-  const visibleThreads = [...(activeRangeThread ? [activeRangeThread] : []), ...globalThreads.filter((thread) => thread.id !== activeRangeThread?.id)];
+  const unresolvedRangeThreads = threads.filter((thread) => thread.scope.type === 'range' && (thread.scope.resolved?.start === undefined || thread.scope.resolved?.end === undefined));
+  const visibleThreads = [
+    ...(activeRangeThread ? [activeRangeThread] : []),
+    ...globalThreads.filter((thread) => thread.id !== activeRangeThread?.id),
+    ...unresolvedRangeThreads.filter((thread) => thread.id !== activeRangeThread?.id),
+  ];
   const unthreadedSuggestions = suggestions.filter((suggestion) => suggestion.threadId === undefined);
   const refreshInvitations = async () => {
     const next = await request<WorkspaceInvitation[]>('/api/invitations', { headers });
@@ -2102,14 +2107,14 @@ function App(): React.ReactElement {
                     {agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.displayName}</option>)}
                   </select>
                 ) : null}
-                <div className="panel-list-heading"><span>{activeRangeThread ? '当前段落与全局讨论' : '全局讨论'}</span><span>{globalThreads.length} 个全局线程 · 待审 {pendingSuggestionCount}</span></div>
+                <div className="panel-list-heading"><span>{activeRangeThread ? '当前段落与全局讨论' : '全局讨论'}</span><span>{globalThreads.length} 个全局线程{unresolvedRangeThreads.length ? ` · 历史范围 ${unresolvedRangeThreads.length}` : ''} · 待审 {pendingSuggestionCount}</span></div>
                 <div className="thread-list">
                   {visibleThreads.length ? visibleThreads.map((thread) => (
                     <div className={`thread-row ${thread.id === activeThreadId ? 'active' : ''}`} key={thread.id} onClick={() => setActiveThreadId(thread.id)}>
                       <div className="thread-row-head">
                         <span className={`state-chip ${thread.status}`}>{thread.status === 'open' ? '进行中' : '已解决'}</span>
                         <span className="thread-type">{thread.kind === 'task' ? '任务' : '讨论'}</span>
-                        {thread.scope.type === 'range' ? <span className="thread-anchor">范围评论</span> : null}
+                        {thread.scope.type === 'range' ? <span className={`thread-anchor${thread.scope.resolved?.status === 'detached' ? ' detached' : ''}`}>{thread.scope.resolved?.status === 'detached' ? '历史范围' : '范围评论'}</span> : null}
                       </div>
                       {thread.messages.slice(0, 2).map((message) => (
                         <p key={message.id}>
