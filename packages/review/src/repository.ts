@@ -1,4 +1,4 @@
-import type { Batch, Message, Suggestion, Thread } from './types.js';
+import type { Batch, DocumentVersion, Message, Suggestion, Thread } from './types.js';
 
 /**
  * Persistence is kept behind this port so the domain service does not know
@@ -21,6 +21,9 @@ export interface ReviewRepository {
   listBatches(threadId: string): Batch[];
   /** Insert or replace the complete batch record. */
   saveBatch(batch: Batch): void;
+  getDocumentVersion(id: string): DocumentVersion | undefined;
+  listDocumentVersions(docId: string): DocumentVersion[];
+  saveDocumentVersion(version: DocumentVersion): void;
   transaction?<T>(work: () => T): T;
 }
 
@@ -30,6 +33,7 @@ export class MemoryReviewRepository implements ReviewRepository {
   private readonly messages = new Map<string, Message>();
   private readonly suggestions = new Map<string, Suggestion>();
   private readonly batches = new Map<string, Batch>();
+  private readonly versions = new Map<string, DocumentVersion>();
 
   getThread(id: string): Thread | undefined { return this.threads.get(id); }
   listThreads(docId: string): Thread[] {
@@ -51,5 +55,12 @@ export class MemoryReviewRepository implements ReviewRepository {
     return [...this.batches.values()].filter((batch) => batch.threadId === threadId);
   }
   saveBatch(batch: Batch): void { this.batches.set(batch.id, batch); }
+  getDocumentVersion(id: string): DocumentVersion | undefined { return this.versions.get(id); }
+  listDocumentVersions(docId: string): DocumentVersion[] {
+    return [...this.versions.values()]
+      .filter((version) => version.docId === docId)
+      .sort((a, b) => a.createdAt - b.createdAt || a.id.localeCompare(b.id));
+  }
+  saveDocumentVersion(version: DocumentVersion): void { this.versions.set(version.id, version); }
   transaction<T>(work: () => T): T { return work(); }
 }

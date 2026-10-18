@@ -1,6 +1,6 @@
 import { createRequire } from 'node:module';
 import type { DatabaseSync } from 'node:sqlite';
-import type { Batch, Message, ReviewRepository, Suggestion, Thread } from '@collab/review';
+import type { Batch, DocumentVersion, Message, ReviewRepository, Suggestion, Thread } from '@collab/review';
 
 const { DatabaseSync: DatabaseSyncConstructor } = createRequire(import.meta.url)('node:sqlite') as {
   DatabaseSync: new (path: string) => DatabaseSync;
@@ -9,6 +9,7 @@ const { DatabaseSync: DatabaseSyncConstructor } = createRequire(import.meta.url)
 export type StoredThread = Thread;
 export type StoredMessage = Message;
 export type StoredSuggestion = Suggestion;
+export type StoredDocumentVersion = DocumentVersion;
 
 export class ReviewStore implements ReviewRepository {
   readonly db: DatabaseSync;
@@ -18,9 +19,11 @@ export class ReviewStore implements ReviewRepository {
       CREATE TABLE IF NOT EXISTS messages (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, author_id TEXT NOT NULL, body TEXT NOT NULL, mentions_json TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'visible', withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS suggestions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, thread_id TEXT, batch_id TEXT, author_id TEXT NOT NULL, anchor_json TEXT NOT NULL, new_text TEXT NOT NULL, rationale TEXT, status TEXT NOT NULL, decided_by TEXT, decided_at INTEGER, withdrawn_at INTEGER, withdrawn_by TEXT, created_at INTEGER NOT NULL);
       CREATE TABLE IF NOT EXISTS batches (id TEXT PRIMARY KEY, thread_id TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
+      CREATE TABLE IF NOT EXISTS document_versions (id TEXT PRIMARY KEY, doc_id TEXT NOT NULL, suggestion_id TEXT NOT NULL, thread_id TEXT, text TEXT NOT NULL, created_by TEXT NOT NULL, created_at INTEGER NOT NULL);
       CREATE INDEX IF NOT EXISTS threads_doc_created ON threads(doc_id, created_at);
       CREATE INDEX IF NOT EXISTS messages_thread_created ON messages(thread_id, created_at);
-      CREATE INDEX IF NOT EXISTS suggestions_doc_status ON suggestions(doc_id, status);`);
+      CREATE INDEX IF NOT EXISTS suggestions_doc_status ON suggestions(doc_id, status);
+      CREATE INDEX IF NOT EXISTS document_versions_doc_created ON document_versions(doc_id, created_at);`);
     try { this.db.exec('ALTER TABLE threads ADD COLUMN agent_id TEXT'); } catch { /* Existing databases already have the column. */ }
     try { this.db.exec("ALTER TABLE messages ADD COLUMN status TEXT NOT NULL DEFAULT 'visible'"); } catch { /* Existing databases already have the column. */ }
     try { this.db.exec('ALTER TABLE messages ADD COLUMN withdrawn_at INTEGER'); } catch { /* Existing databases already have the column. */ }
@@ -65,6 +68,17 @@ export class ReviewStore implements ReviewRepository {
   getBatch(id: string): Batch | undefined { return this.db.prepare('SELECT id, thread_id as threadId, created_by as createdBy, created_at as createdAt FROM batches WHERE id = ?').get(id) as Batch | undefined; }
   listBatches(threadId: string): Batch[] { return this.db.prepare('SELECT id, thread_id as threadId, created_by as createdBy, created_at as createdAt FROM batches WHERE thread_id = ? ORDER BY created_at').all(threadId) as unknown as Batch[]; }
   saveBatch(batch: Batch): void { this.db.prepare('INSERT OR REPLACE INTO batches(id, thread_id, created_by, created_at) VALUES (?, ?, ?, ?)').run(batch.id, batch.threadId, batch.createdBy, batch.createdAt); }
+  getDocumentVersion(id: string): StoredDocumentVersion | undefined {
+    const row = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE id = ?').get(id) as Record<string, unknown> | undefined;
+    return row ? this.documentVersion(row) : undefined;
+  }
+  listDocumentVersions(docId: string): StoredDocumentVersion[] {
+    const rows = this.db.prepare('SELECT id, doc_id as docId, suggestion_id as suggestionId, thread_id as threadId, text, created_by as createdBy, created_at as createdAt FROM document_versions WHERE doc_id = ? ORDER BY created_at, id').all(docId) as Array<Record<string, unknown>>;
+    return rows.map((row) => this.documentVersion(row));
+  }
+  saveDocumentVersion(version: StoredDocumentVersion): void {
+    this.db.prepare('INSERT OR REPLACE INTO document_versions(id, doc_id, suggestion_id, thread_id, text, created_by, created_at) VALUES (?, ?, ?, ?, ?, ?, ?)').run(version.id, version.docId, version.suggestionId, version.threadId ?? null, version.text, version.createdBy, version.createdAt);
+  }
   transaction<T>(work: () => T): T {
     this.db.exec('BEGIN');
     try { const value = work(); this.db.exec('COMMIT'); return value; }
@@ -99,6 +113,18 @@ export class ReviewStore implements ReviewRepository {
       ...(row.decidedAt === null || row.decidedAt === undefined ? {} : { decidedAt: Number(row.decidedAt) }),
       ...(row.withdrawnAt === null || row.withdrawnAt === undefined ? {} : { withdrawnAt: Number(row.withdrawnAt) }),
       ...(row.withdrawnBy === null || row.withdrawnBy === undefined ? {} : { withdrawnBy: String(row.withdrawnBy) }), createdAt: Number(row.createdAt),
+    };
+  }
+
+  private documentVersion(row: Record<string, unknown>): StoredDocumentVersion {
+    return {
+      id: String(row.id),
+      docId: String(row.docId),
+      suggestionId: String(row.suggestionId),
+      ...(row.threadId === null || row.threadId === undefined ? {} : { threadId: String(row.threadId) }),
+      text: String(row.text),
+      createdBy: String(row.createdBy),
+      createdAt: Number(row.createdAt),
     };
   }
 }

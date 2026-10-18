@@ -60,6 +60,21 @@ export interface Batch {
   createdAt: number;
 }
 
+/**
+ * Immutable text captured immediately before an accepted suggestion changes a
+ * document. The snapshot is tied to the suggestion so a reviewer can return
+ * the document to the state that preceded that change.
+ */
+export interface DocumentVersion {
+  id: string;
+  docId: string;
+  suggestionId: string;
+  threadId?: string;
+  text: string;
+  createdBy: string;
+  createdAt: number;
+}
+
 export interface BatchProgress {
   total: number;
   pending: number;
@@ -114,7 +129,8 @@ export type ReviewError =
   | 'invalid-state'
   | 'stale-anchor'
   | 'detached-anchor'
-  | 'range-out-of-bounds';
+  | 'range-out-of-bounds'
+  | 'version-not-found';
 
 export interface CreateThreadInput {
   docId: string;

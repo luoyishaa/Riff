@@ -764,6 +764,24 @@ app.get<{ Params: { id: string } }>('/api/docs/:id/outline', async (request, rep
   if (!record || !roleFor(record.id, principalId)) return fail(reply, 404, 'not-found', 'Document was not found');
   return buildOutline(record.handle.getText(), record.relativePath ?? record.title);
 });
+app.get<{ Params: { id: string } }>('/api/docs/:id/versions', async (request, reply) => {
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
+  const result = reviewService.listDocumentVersions(request.params.id, role);
+  if (!result.ok) return fail(reply, 404, result.error, 'Document versions were not found');
+  return result.value;
+});
+app.post<{ Params: { id: string; versionId: string } }>('/api/docs/:id/versions/:versionId/restore', async (request, reply) => {
+  const version = reviewStore.getDocumentVersion(request.params.versionId);
+  if (!version || version.docId !== request.params.id) return fail(reply, 404, 'version-not-found', 'Document version was not found');
+  const principalId = principalIdFromHeaders(request.headers);
+  const role = roleFor(request.params.id, principalId);
+  if (!role || !can(role, 'edit')) return fail(reply, 403, 'permission-denied', 'Editor role is required');
+  const result = reviewService.restoreDocumentVersion(version.id, principalId, role);
+  if (!result.ok) return fail(reply, 400, result.error, 'Unable to restore document version');
+  return { ok: true, version: result.value, document: store.get(request.params.id)?.handle.getText() ?? '' };
+});
 app.post<{ Params: { id: string } }>('/api/docs/:id/local-project/sync', async (request, reply) => {
   const principalId = principalIdFromHeaders(request.headers);
   const role = roleFor(request.params.id, principalId);

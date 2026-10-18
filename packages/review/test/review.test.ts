@@ -84,6 +84,34 @@ describe('review domain', () => {
     expect(repository.getSuggestion(suggestion.value.suggestion.id)?.status).toBe('accepted');
   });
 
+  it('captures an immutable pre-acceptance version and restores it for editors', () => {
+    const { doc, service, repository } = setup('alpha beta');
+    const anchor = service.createAnchor('doc-1', 0, 5);
+    expect(anchor.ok).toBe(true);
+    if (!anchor.ok) return;
+    const suggestion = service.createSuggestion({
+      docId: 'doc-1', authorId: 'agent', threadId: undefined, anchor: anchor.value, newText: 'ALPHA', authorEffectiveRole: 'suggester',
+    });
+    expect(suggestion.ok).toBe(true);
+    if (!suggestion.ok) return;
+    expect(service.acceptSuggestion('doc-1', suggestion.value.suggestion.id, 'alice', 'editor').ok).toBe(true);
+    expect(doc.getText()).toBe('ALPHA beta');
+    const versions = service.listDocumentVersions('doc-1', 'viewer');
+    expect(versions.ok).toBe(true);
+    if (!versions.ok) return;
+    expect(versions.value).toHaveLength(1);
+    expect(versions.value[0]).toMatchObject({ docId: 'doc-1', suggestionId: suggestion.value.suggestion.id, text: 'alpha beta', createdBy: 'alice' });
+    const restored = service.restoreDocumentVersion(versions.value[0].id, 'alice', 'editor');
+    expect(restored.ok).toBe(true);
+    expect(doc.getText()).toBe('alpha beta');
+    expect(repository.getDocumentVersion(versions.value[0].id)?.text).toBe('alpha beta');
+  });
+
+  it('does not let viewers restore a document version', () => {
+    const { service } = setup();
+    expect(service.restoreDocumentVersion('missing', 'alice', 'viewer').error).toBe('permission-denied');
+  });
+
   it('allows an editor to revise a pending suggestion before acceptance', () => {
     const { doc, service } = setup('ALPHA');
     const anchor = service.createAnchor('doc-1', 0, 5);

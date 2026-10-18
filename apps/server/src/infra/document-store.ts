@@ -306,6 +306,8 @@ export class DocumentStore {
     }
     const suggestionTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'suggestions'").get() as { name?: string } | undefined;
     if (suggestionTable?.name !== undefined) this.db.prepare('DELETE FROM suggestions WHERE doc_id = ?').run(documentId);
+    const versionTable = this.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'document_versions'").get() as { name?: string } | undefined;
+    if (versionTable?.name !== undefined) this.db.prepare('DELETE FROM document_versions WHERE doc_id = ?').run(documentId);
   }
   workspace(id: string): WorkspaceRecord | undefined {
     const row = this.db.prepare(`SELECT id, title, created_by as createdBy, created_at as createdAt,

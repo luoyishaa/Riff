@@ -27,6 +27,16 @@ export const authLoginSchema = z.object({
 }).strict();
 export const switchAccountSchema = z.object({ principalId: z.string().min(1) }).strict();
 export const documentSchema = z.object({ id: z.string(), title: z.string(), text: z.string(), workspaceId: z.string().optional() });
+/** Immutable text captured immediately before a suggestion was accepted. */
+export const documentVersionSchema = z.object({
+  id: z.string(),
+  docId: z.string(),
+  suggestionId: z.string(),
+  threadId: z.string().optional(),
+  text: z.string(),
+  createdBy: z.string(),
+  createdAt: z.number().int(),
+}).strict();
 export const createWorkspaceSchema = z.object({ title: z.string().trim().min(1).max(120) }).strict();
 /** Editable workspace metadata. Only the title is mutable in this milestone. */
 export const updateWorkspaceSchema = z.object({ title: z.string().trim().min(1).max(120) }).strict();
@@ -169,6 +179,7 @@ export type UpdateAccountInput = z.infer<typeof updateAccountSchema>;
 export type AuthLoginInput = z.infer<typeof authLoginSchema>;
 export type SwitchAccountInput = z.infer<typeof switchAccountSchema>;
 export type DocumentDto = z.infer<typeof documentSchema>;
+export type DocumentVersionDto = z.infer<typeof documentVersionSchema>;
 export type CreateWorkspaceInput = z.infer<typeof createWorkspaceSchema>;
 export type UpdateWorkspaceInput = z.infer<typeof updateWorkspaceSchema>;
 export type DeleteWorkspaceInput = z.infer<typeof deleteWorkspaceSchema>;

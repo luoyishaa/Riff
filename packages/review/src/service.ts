@@ -21,6 +21,7 @@ import type {
   BatchItemDecision,
   BatchProgress,
   CreateSuggestionInput,
+  DocumentVersion,
   UpdateSuggestionInput,
   CreateThreadInput,
   Message,
@@ -161,6 +162,26 @@ export class ReviewService {
     return decideBatchRemaining(this.batchHost(), batchId, deciderId, deciderRole, 'reject');
   }
 
+  /** List immutable pre-acceptance snapshots for a document, oldest first. */
+  listDocumentVersions(docId: string, viewerRole?: Role): Result<DocumentVersion[], ReviewError> {
+    const permission = withRole(viewerRole, 'view');
+    if (!permission.ok) return permission;
+    if (!this.options.documents.getDocument(docId)) return err('document-not-found');
+    return { ok: true, value: this.options.repository.listDocumentVersions(docId) };
+  }
+
+  /** Restore a document to the text captured before an accepted suggestion. */
+  restoreDocumentVersion(versionId: string, actorId: string, actorRole: Role): Result<DocumentVersion, ReviewError> {
+    if (!can(actorRole, 'edit')) return err('permission-denied');
+    const version = this.options.repository.getDocumentVersion(versionId);
+    if (!version) return err('version-not-found');
+    const document = this.options.documents.getDocument(version.docId);
+    if (!document) return err('document-not-found');
+    const applied = document.replace(0, document.getText().length, version.text, { principalId: actorId, versionId });
+    if (!applied.ok) return err('range-out-of-bounds');
+    return { ok: true, value: version };
+  }
+
   private batchHost() {
     return {
       repository: this.options.repository,
@@ -262,10 +283,20 @@ export class ReviewService {
           && resolution.start < candidateResolution.end;
       });
     const origin = { principalId: deciderId, suggestionId };
+    const snapshot: DocumentVersion = {
+      id: this.options.ids.next(),
+      docId,
+      suggestionId,
+      ...(suggestion.threadId === undefined ? {} : { threadId: suggestion.threadId }),
+      text: document.getText(),
+      createdBy: deciderId,
+      createdAt: this.options.clock.now(),
+    };
     this.mutedDocuments.add(docId);
     let applied: Result<void, 'range-out-of-bounds'>;
     try {
       applied = transact(this.options.repository, () => {
+        this.options.repository.saveDocumentVersion(snapshot);
         const result = document.replace(resolution.start, resolution.end, suggestion.newText, origin);
         if (!result.ok) return result;
         this.options.repository.saveSuggestion(accepted);
