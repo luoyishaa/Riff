@@ -211,7 +211,7 @@ export class ChatGPTOAuthService {
 
   constructor(private readonly options: OAuthServiceOptions) {
     this.storagePath = options.storagePath ?? defaultStoragePath();
-    this.appName = options.appName ?? 'Collaborative Workbench';
+    this.appName = options.appName ?? 'Riff';
     this.now = options.now ?? (() => Date.now());
     this.fetchImpl = options.fetchImpl ?? fetch;
   }

@@ -1468,7 +1468,7 @@ function App(): React.ReactElement {
     return (
       <main className="auth-shell">
         <section className="auth-card">
-          <div className="auth-brand"><span className="route-mark" aria-hidden="true"><i /><i /><i /></span><div><strong>协作工作台</strong><small>多人协作 · 文本工作台</small></div></div>
+          <div className="auth-brand"><span className="route-mark" aria-hidden="true"><i /><i /><i /></span><div><strong>Riff</strong><small>Make every draft better.</small></div></div>
           <div className="auth-heading"><p className="eyebrow">个人账户</p><h1>{authMode === 'login' ? '登录你的工作台' : '创建协作账户'}</h1><p>{authMode === 'login' ? '登录后打开属于你的项目、文档和邀请。' : '注册一个账号，之后可以接受项目邀请并管理自己的 Agent。'}</p></div>
           <div className="auth-mode-switch" role="tablist" aria-label="账户操作">
             <button type="button" className={authMode === 'login' ? 'selected' : ''} onClick={() => { setAuthMode('login'); setAuthMessage(''); }}>登录</button>
@@ -1524,8 +1524,8 @@ function App(): React.ReactElement {
             <i />
           </span>
           <div>
-            <div className="brand-name">协作工作台</div>
-            <div className="brand-subtitle">多人协作 · 文本工作台</div>
+            <div className="brand-name">Riff</div>
+            <div className="brand-subtitle">Make every draft better.</div>
           </div>
         </div>
         <div className="topbar-route" aria-hidden="true">

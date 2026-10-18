@@ -1,4 +1,6 @@
-# 人机协同纯文本文档系统
+# Riff — Make every draft better.
+
+Riff 是一个人与 Agent 共同编辑、评论和审阅纯文本文档的协作工作台。
 
 这是按 `docs/SPEC.md` 构建的人机协同纯文本 demo。当前包含 Yjs 文档内核、角色权限、SQLite 持久化、WebSocket 协同同步、评论与建议审批、SSE 事件，以及默认 mock agent 的上下文、输出校验和待审建议闭环。
 

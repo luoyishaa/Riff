@@ -241,3 +241,10 @@
 - 已知问题：本次未为新 API key 连接执行真实外部模型调用；实际调用仍需用户提供对应 API key，并且连接凭据只在当前 server 进程中保存。
 - 下一步建议：用 DeepSeek 或 OpenAI API key 连接后，绑定一个 Agent，发送一条自然语言任务并检查 Agent run 与建议生命周期。
 
+### M35 报告：统一 Riff 产品品牌并发布到 GitHub
+- 完成情况：✅ 登录页、顶栏和浏览器标题统一使用 `Riff`；✅ 增加标语 `Make every draft better.`；✅ ChatGPT OAuth 的应用提示名同步为 `Riff`；✅ README 更新产品定位；✅ 推送到现有 GitHub 仓库。
+- 如何验证：`corepack pnpm check`（14 个测试文件、62 个测试通过，边界检查通过）；`corepack pnpm --filter @collab/web build`；`git diff --check`；推送后核对本地与 `origin/master` 提交 SHA。
+- 偏离与决定：技术仓库名继续使用 `collab-docs-agent`，避免破坏已发布链接；产品品牌与仓库技术名称分离。
+- 已知问题：Riff 名称尚未进行商标、域名或应用商店的正式核验。
+- 下一步建议：启动本地服务，在浏览器检查登录页、顶栏和浏览器标签上的 Riff 品牌显示。
+

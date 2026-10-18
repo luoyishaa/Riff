@@ -57,7 +57,7 @@ describe('ChatGPT OAuth plan connection', () => {
     const authorization = new URL(started.authorizationUrl);
     expectedNonce = authorization.searchParams.get('nonce')!;
     expect(authorization.searchParams.get('client_id')).toBe('dynamic_agent_client');
-    expect(authorization.searchParams.get('agent_name_hint')).toBe('Collaborative Workbench');
+    expect(authorization.searchParams.get('agent_name_hint')).toBe('Riff');
     expect(authorization.searchParams.get('code_challenge_method')).toBe('S256');
     expect(authorization.searchParams.get('scope')).toContain('chatgpt.tokens.use.direct');
     const profile = await oauth.complete(new URLSearchParams({ state: authorization.searchParams.get('state')!, code: 'authorization-code', client_id: issuedClientId }));
