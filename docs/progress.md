@@ -297,3 +297,10 @@
 - 偏离与决定：未读状态按当前 principal 存在服务端 SQLite，而不是只在浏览器临时计算；原始 HTML 和数学内容继续以安全文本/代码样式展示，不执行 HTML 或公式引擎，避免改变纯文本协作模型。
 - 已知问题：版本历史仍按已有快照语义提供恢复；跨段 relatedEdits 的线程归属和 detached 范围的独立历史入口仍需后续产品设计。
 - 下一步建议：在 Chrome 中使用两个账号分别打开同一段落，验证一方发消息、另一方看到未读标记并打开后消失，再执行建议接受与版本回退回归。
+
+### M43 报告：Markdown 映射、未读状态与可逆版本历史
+- 完成情况：✅ Markdown 预览改为字符级源码映射，源码和预览对同一 review marker 使用同一 `[start, end)` 区间，修复相邻段落被同时划线；✅ 补充嵌套列表、引用式链接、脚注、数学内容和复杂 HTML 的安全展示，保留 CRLF 偏移；✅ 范围线程与全局线程按 principal 持久化已读时间，正文标记和全局列表显示未读状态，普通段落可直接打开空讨论；✅ 建议接受前后均保存不可变快照，恢复前保存 safety snapshot，版本历史可恢复任意记录且恢复操作可逆；✅ 旧建议没有快照时只提示不可恢复，不猜测正文。
+- 如何验证：`corepack pnpm check`（16 个测试文件、83 个测试）；`corepack pnpm --filter @collab/web build`；Impeccable detector 对变更 UI 文件返回空结果；`git diff --check`；服务端重启后 HTTP smoke 返回正常。
+- 偏离与决定：数学内容以安全源码样式展示，不引入公式执行器；复杂原始 HTML 以安全文本展示；版本恢复继续走 Yjs/WebSocket/local-project 链路，并为每次恢复保留可逆 safety snapshot。详见 `docs/decisions.md`。
+- 已知问题：当前仍不是完整 CommonMark/GFM 引擎；复杂 blockquote/HTML 交互和公式语义渲染不在第一代范围。GitHub 推送需在本报告完成后核对本地与远端 SHA。
+- 下一步建议：发布后用两个真实账号做一次未读状态回归，并在真实项目 Markdown 文件上覆盖列表、脚注、引用链接、数学和 HTML 安全展示。
