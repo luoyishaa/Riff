@@ -1,7 +1,7 @@
 import Fastify from 'fastify';
 import { createHash, randomBytes, scryptSync, timingSafeEqual } from 'node:crypto';
 import type { IncomingHttpHeaders, IncomingMessage } from 'node:http';
-import { can, randomId, roleRank, systemClock, type Principal, type Role } from '@collab/kernel';
+import { can, randomId, resolveAnchor, roleRank, systemClock, type Principal, type Role } from '@collab/kernel';
 import { ReviewService, type ReviewEvent } from '@collab/review';
 import type { AdapterConfig, AgentConfig } from '@collab/agent';
 import { agentConfigSchema, agentProviderConnectSchema, authLoginSchema, createAgentSchema, createDocumentSchema, createMessageSchema, createSuggestionSchema, createThreadSchema, createWorkspaceSchema, deleteWorkspaceSchema, localProjectBindSchema, localProjectSyncSchema, modelProviderBindingSchema, modelProviderConnectSchema, modelProviderIdSchema, registerPrincipalSchema, switchAccountSchema, updateAccountSchema, updateSuggestionSchema, updateWorkspaceSchema, workspaceInvitationSchema, workspaceMemberSchema } from '@collab/protocol';
@@ -783,13 +783,29 @@ app.get<{ Params: { id: string } }>('/api/docs/:id/threads', async (request, rep
   const principalId = principalIdFromHeaders(request.headers);
   const role = roleFor(request.params.id, principalId);
   if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
-  return reviewStore.listThreads(request.params.id).map((thread) => ({ ...thread, messages: reviewStore.listMessages(thread.id) }));
+  const document = store.get(request.params.id)?.handle;
+  return reviewStore.listThreads(request.params.id).map((thread) => {
+    if (thread.scope.type !== 'range' || !document) return { ...thread, messages: reviewStore.listMessages(thread.id) };
+    const resolved = resolveAnchor(document, thread.scope.anchor);
+    const range = resolved.status === 'detached'
+      ? { status: resolved.status }
+      : { status: resolved.status, start: resolved.start, end: resolved.end };
+    return { ...thread, scope: { ...thread.scope, resolved: range }, messages: reviewStore.listMessages(thread.id) };
+  });
 });
 app.get<{ Params: { id: string } }>('/api/docs/:id/suggestions', async (request, reply) => {
   const principalId = principalIdFromHeaders(request.headers);
   const role = roleFor(request.params.id, principalId);
   if (!role || !can(role, 'view')) return fail(reply, 403, 'permission-denied', 'Membership is required');
-  return reviewStore.listSuggestions(request.params.id);
+  const document = store.get(request.params.id)?.handle;
+  return reviewStore.listSuggestions(request.params.id).map((suggestion) => {
+    if (!document) return suggestion;
+    const resolved = resolveAnchor(document, suggestion.anchor);
+    const range = resolved.status === 'detached'
+      ? { status: resolved.status }
+      : { status: resolved.status, start: resolved.start, end: resolved.end };
+    return { ...suggestion, resolved: range };
+  });
 });
 app.get<{ Params: { id: string } }>('/api/docs/:id/agents', async (request, reply) => {
   const principalId = principalIdFromHeaders(request.headers);

@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from 'react';
 import { Compartment, EditorState, StateEffect } from '@codemirror/state';
-import { EditorView, keymap, lineNumbers } from '@codemirror/view';
+import { Decoration, EditorView, keymap, lineNumbers } from '@codemirror/view';
 import { defaultKeymap, indentWithTab } from '@codemirror/commands';
-import { MarkdownPreview, type MarkdownPreviewAction, type MarkdownPreviewSelection } from './MarkdownPreview.js';
-import { InlineSelectionComposer, type InlineComposerMode, type InlineMember } from './InlineSelectionComposer.js';
+import { MarkdownPreview, type MarkdownPreviewAction, type MarkdownPreviewSelection, type MarkdownReviewMarker } from './MarkdownPreview.js';
+import { InlineSelectionComposer, type InlineMember } from './InlineSelectionComposer.js';
 
 export type EditorSelection = { start: number; end: number };
+export type EditorReviewMarker = { id: string; start: number; end: number; kind: 'thread' | 'suggestion'; status: string };
 
 export interface CodeMirrorEditorProps {
   value: string;
@@ -17,6 +18,8 @@ export interface CodeMirrorEditorProps {
   onInlineActionSubmit?: (action: MarkdownPreviewAction, body: string) => void | Promise<void>;
   members?: InlineMember[];
   onViewModeChange?: (mode: 'source' | 'preview') => void;
+  reviewMarkers?: EditorReviewMarker[];
+  onReviewMarkerClick?: (markerId: string) => void;
   /** Source offsets used by the document outline to reveal the matching block. */
   outlineTarget?: EditorSelection | null;
   className?: string;
@@ -42,6 +45,8 @@ export function CodeMirrorEditor({
   onInlineActionSubmit,
   members = [],
   onViewModeChange,
+  reviewMarkers = [],
+  onReviewMarkerClick,
   outlineTarget,
   className,
   documentKind = 'text',
@@ -53,14 +58,17 @@ export function CodeMirrorEditor({
   const onChangeRef = useRef(onChange);
   const onSelectionChangeRef = useRef(onSelectionChange);
   const editableCompartmentRef = useRef<Compartment | null>(null);
+  const markerCompartmentRef = useRef<Compartment | null>(null);
+  const onReviewMarkerClickRef = useRef(onReviewMarkerClick);
   const [viewMode, setViewMode] = useState<'source' | 'preview'>('source');
   const [sourceMenu, setSourceMenu] = useState<{ top: number; left: number } | null>(null);
-  const [sourceComposer, setSourceComposer] = useState<{ top: number; left: number; mode: InlineComposerMode } | null>(null);
+  const [sourceComposer, setSourceComposer] = useState<{ top: number; left: number } | null>(null);
   const pointerSelectingRef = useRef(false);
   const isMarkdown = documentKind === 'markdown';
 
   onChangeRef.current = onChange;
   onSelectionChangeRef.current = onSelectionChange;
+  onReviewMarkerClickRef.current = onReviewMarkerClick;
   valueRef.current = value;
 
   useEffect(() => {
@@ -68,9 +76,12 @@ export function CodeMirrorEditor({
 
     const editorHost = hostRef.current;
     const editableCompartment = new Compartment();
+    const markerCompartment = new Compartment();
     // Keep the compartment in a ref so role changes can reconfigure the same
     // editor without recreating it or losing the current selection.
     editableCompartmentRef.current = editableCompartment;
+    markerCompartmentRef.current = markerCompartment;
+
 
     const editorState = EditorState.create({
       doc: valueRef.current,
@@ -82,6 +93,7 @@ export function CodeMirrorEditor({
           EditorState.readOnly.of(!editable),
           EditorView.editable.of(editable),
         ]),
+        markerCompartment.of(EditorView.decorations.of(Decoration.none)),
         EditorView.theme({
           '&': { height: '480px', backgroundColor: '#fcfbf8', color: '#25231f' },
           '.cm-editor': { fontSize: '13px' },
@@ -93,6 +105,17 @@ export function CodeMirrorEditor({
           '.cm-activeLineGutter': { color: '#a7463b', backgroundColor: '#f3e4de' },
           '.cm-selectionBackground, ::selection': { backgroundColor: '#ead1ca !important' },
           '&.cm-focused': { outline: 'none' },
+        }),
+        EditorView.domEventHandlers({
+          click: (event) => {
+            const target = event.target;
+            if (!(target instanceof Element)) return false;
+            const marker = target.closest<HTMLElement>('[data-review-id]');
+            const markerId = marker?.dataset.reviewId;
+            if (!markerId) return false;
+            onReviewMarkerClickRef.current?.(markerId);
+            return true;
+          },
         }),
         // A marker lets the listener distinguish a parent/Yjs update from a
         // user edit. It is deliberately a transaction effect, not a global
@@ -166,6 +189,7 @@ export function CodeMirrorEditor({
       view.destroy();
       viewRef.current = null;
       editableCompartmentRef.current = null;
+      markerCompartmentRef.current = null;
     };
   }, []);
 
@@ -193,6 +217,22 @@ export function CodeMirrorEditor({
 
   useEffect(() => {
     const view = viewRef.current;
+    const compartment = markerCompartmentRef.current;
+    if (!view || !compartment) return;
+    const decorations = Decoration.set(
+      reviewMarkers
+        .filter((marker) => marker.start >= 0 && marker.end > marker.start && marker.end <= view.state.doc.length)
+        .map((marker) => Decoration.mark({
+          class: marker.kind === 'suggestion' ? 'cm-review-range cm-review-suggestion' : 'cm-review-range cm-review-thread',
+          attributes: { 'data-review-id': marker.id },
+        }).range(marker.start, marker.end)),
+      true,
+    );
+    view.dispatch({ effects: compartment.reconfigure(EditorView.decorations.of(decorations)) });
+  }, [reviewMarkers]);
+
+  useEffect(() => {
+    const view = viewRef.current;
     if (!view || viewMode !== 'source' || !outlineTarget) return;
     const start = Math.max(0, Math.min(outlineTarget.start, view.state.doc.length));
     const end = Math.max(start, Math.min(outlineTarget.end, view.state.doc.length));
@@ -212,11 +252,11 @@ export function CodeMirrorEditor({
     setSourceComposer(null);
   }, [value]);
 
-  const openSourceComposer = (mode: InlineComposerMode) => {
+  const openSourceComposer = () => {
     if (!sourceMenu) return;
-    setSourceComposer({ ...sourceMenu, mode });
+    setSourceComposer(sourceMenu);
     setSourceMenu(null);
-    onPreviewAction?.(mode);
+    onPreviewAction?.('comment');
   };
 
   return (
@@ -244,21 +284,18 @@ export function CodeMirrorEditor({
       <div ref={sourcePaneRef} className={`document-editor-pane document-editor-source-pane${isMarkdown && viewMode === 'preview' ? ' is-hidden' : ''}`} aria-hidden={isMarkdown && viewMode === 'preview'}>
         {sourceMenu ? (
           <div className="source-selection-menu" role="toolbar" aria-label="选区操作" style={{ top: sourceMenu.top, left: sourceMenu.left }}>
-            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openSourceComposer('comment')}>评论</button>
-            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => openSourceComposer('suggestion')}>建议修改</button>
+            <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={openSourceComposer}>评论</button>
           </div>
         ) : null}
         {sourceComposer && onInlineActionSubmit ? (
           <InlineSelectionComposer
-            mode={sourceComposer.mode}
             top={sourceComposer.top}
             left={sourceComposer.left}
             members={members}
             onCancel={() => setSourceComposer(null)}
             onSubmit={(body) => {
-              const mode = sourceComposer.mode;
               setSourceComposer(null);
-              void onInlineActionSubmit(mode, body);
+              void onInlineActionSubmit('comment', body);
             }}
           />
         ) : null}
@@ -273,6 +310,8 @@ export function CodeMirrorEditor({
             {...(onPreviewSelectionChange ? { onSelectionChange: onPreviewSelectionChange } : {})}
             {...(onPreviewAction ? { onAction: onPreviewAction } : {})}
             {...(onInlineActionSubmit ? { onInlineActionSubmit } : {})}
+            reviewMarkers={reviewMarkers as MarkdownReviewMarker[]}
+            {...(onReviewMarkerClick ? { onReviewMarkerClick } : {})}
             members={members}
           />
         </div>

@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ReactNode } from 'react';
-import { InlineSelectionComposer, type InlineComposerMode, type InlineMember } from './InlineSelectionComposer.js';
+import { useEffect, useRef, useState, type MouseEvent, type ReactNode } from 'react';
+import { InlineSelectionComposer, type InlineMember } from './InlineSelectionComposer.js';
 
 export type MarkdownPreviewSelection = { start: number; end: number };
-export type MarkdownPreviewAction = 'comment' | 'suggestion';
+export type MarkdownPreviewAction = 'comment';
+export type MarkdownReviewMarker = { id: string; start: number; end: number; kind: 'thread' | 'suggestion'; status: string };
 
 export interface MarkdownPreviewProps {
   value: string;
@@ -15,6 +16,8 @@ export interface MarkdownPreviewProps {
   scrollTo?: MarkdownPreviewSelection | null;
   /** Whether the preview pane is currently visible to the user. */
   active?: boolean;
+  reviewMarkers?: MarkdownReviewMarker[];
+  onReviewMarkerClick?: (markerId: string) => void;
 }
 
 type MarkdownBlock =
@@ -262,17 +265,17 @@ function boundarySourceOffset(root: HTMLElement, node: Node, offset: number): nu
   }
 }
 
-export function MarkdownPreview({ value, className, onSelectionChange, onAction, onInlineActionSubmit, members = [], scrollTo, active = true }: MarkdownPreviewProps): React.ReactElement {
+export function MarkdownPreview({ value, className, onSelectionChange, onAction, onInlineActionSubmit, members = [], scrollTo, active = true, reviewMarkers = [], onReviewMarkerClick }: MarkdownPreviewProps): React.ReactElement {
   const blocks = parseBlocks(value);
   const rootRef = useRef<HTMLElement | null>(null);
   const pointerSelectingRef = useRef(false);
   const [menu, setMenu] = useState<{ top: number; left: number } | null>(null);
-  const [inlineComposer, setInlineComposer] = useState<{ top: number; left: number; mode: InlineComposerMode } | null>(null);
+  const [inlineComposer, setInlineComposer] = useState<{ top: number; left: number } | null>(null);
   const handleAction = (action: MarkdownPreviewAction) => {
     // Keep the browser selection so the review panel can still associate the
     // next comment or suggestion with the same source range. The menu itself
     // is transient and should disappear as soon as an action is chosen.
-    if (menu) setInlineComposer({ top: menu.top + 42, left: menu.left, mode: action });
+    if (menu) setInlineComposer({ top: menu.top + 42, left: menu.left });
     setMenu(null);
     onAction?.(action);
   };
@@ -344,7 +347,6 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
       document.removeEventListener('selectionchange', handleSelectionChange);
       rootRef.current?.removeEventListener('pointerdown', beginPointerSelection);
       document.removeEventListener('pointerup', finishPointerSelection);
-      pointerSelectingRef.current = false;
     };
   }, [onSelectionChange]);
 
@@ -364,25 +366,50 @@ export function MarkdownPreview({ value, className, onSelectionChange, onAction,
     setInlineComposer(null);
   }, [value]);
 
+  useEffect(() => {
+    const root = rootRef.current;
+    if (!root) return;
+    const sourceSpans = Array.from(root.querySelectorAll<HTMLElement>('[data-source-start][data-source-end]'));
+    sourceSpans.forEach((span) => {
+      span.classList.remove('markdown-review-range', 'markdown-review-thread', 'markdown-review-suggestion');
+      delete span.dataset.reviewId;
+    });
+    for (const marker of reviewMarkers) {
+      const matching = sourceSpans.find((span) => {
+        const start = Number(span.dataset.sourceStart);
+        const end = Number(span.dataset.sourceEnd);
+        return Number.isFinite(start) && Number.isFinite(end) && start < marker.end && end > marker.start;
+      });
+      if (!matching) continue;
+      matching.classList.add('markdown-review-range', marker.kind === 'suggestion' ? 'markdown-review-suggestion' : 'markdown-review-thread');
+      matching.dataset.reviewId = marker.id;
+    }
+  }, [reviewMarkers, value]);
+
+  const handleReviewClick = (event: MouseEvent<HTMLElement>) => {
+    const target = event.target;
+    if (!(target instanceof Element)) return;
+    const marker = target.closest<HTMLElement>('[data-review-id]');
+    const markerId = marker?.dataset.reviewId;
+    if (markerId) onReviewMarkerClick?.(markerId);
+  };
+
   return (
-    <article ref={rootRef} className={`markdown-preview${className ? ` ${className}` : ''}`} aria-label="Markdown 预览">
+    <article ref={rootRef} onClick={handleReviewClick} className={`markdown-preview${className ? ` ${className}` : ''}`} aria-label="Markdown 预览">
       {menu ? (
         <div className="markdown-selection-menu" role="toolbar" aria-label="选区操作" style={{ top: menu.top, left: menu.left }}>
           <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => handleAction('comment')}>评论</button>
-          <button type="button" onMouseDown={(event) => event.preventDefault()} onClick={() => handleAction('suggestion')}>建议修改</button>
         </div>
       ) : null}
       {inlineComposer && onInlineActionSubmit ? (
         <InlineSelectionComposer
-          mode={inlineComposer.mode}
           top={inlineComposer.top}
           left={inlineComposer.left}
           members={members}
           onCancel={() => setInlineComposer(null)}
           onSubmit={(body) => {
-            const mode = inlineComposer.mode;
             setInlineComposer(null);
-            void onInlineActionSubmit(mode, body);
+            void onInlineActionSubmit('comment', body);
           }}
         />
       ) : null}

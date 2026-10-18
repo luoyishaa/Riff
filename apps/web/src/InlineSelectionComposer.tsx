@@ -1,7 +1,5 @@
 import { useMemo, useRef, useState, type CSSProperties, type KeyboardEvent } from 'react';
 
-export type InlineComposerMode = 'comment' | 'suggestion';
-
 export type InlineMember = {
   id: string;
   displayName: string;
@@ -12,7 +10,6 @@ export type InlineMember = {
 type MentionRange = { start: number; end: number; index: number };
 
 export interface InlineSelectionComposerProps {
-  mode: InlineComposerMode;
   top: number;
   left: number;
   members: InlineMember[];
@@ -28,19 +25,19 @@ function findMentionRange(value: string, caret: number): Omit<MentionRange, 'ind
   return { start: caret - query.length - 1, end: caret };
 }
 
-export function InlineSelectionComposer({ mode, top, left, members, onSubmit, onCancel }: InlineSelectionComposerProps): React.ReactElement {
+export function InlineSelectionComposer({ top, left, members, onSubmit, onCancel }: InlineSelectionComposerProps): React.ReactElement {
   const [value, setValue] = useState('');
   const [mention, setMention] = useState<MentionRange | null>(null);
   const inputRef = useRef<HTMLTextAreaElement | null>(null);
   const candidates = useMemo(() => {
-    if (!mention || mode !== 'comment') return [];
+    if (!mention) return [];
     const query = value.slice(mention.start + 1, mention.end).trim().toLocaleLowerCase();
     return members.filter((member) => {
       if (!query) return true;
       return member.displayName.toLocaleLowerCase().includes(query)
         || (member.handle?.toLocaleLowerCase().includes(query) ?? false);
     });
-  }, [members, mention, mode, value]);
+  }, [members, mention, value]);
 
   const updateMention = (next: string, caret: number) => {
     const range = findMentionRange(next, caret);
@@ -93,8 +90,8 @@ export function InlineSelectionComposer({ mode, top, left, members, onSubmit, on
       <textarea
         ref={inputRef}
         autoFocus
-        aria-label={mode === 'comment' ? '添加选区评论' : '填写修改建议'}
-        placeholder={mode === 'comment' ? '添加评论，可 @成员…' : '输入替换后的文本…'}
+        aria-label="添加选区评论"
+        placeholder="添加评论，可 @成员…"
         value={value}
         onChange={(event) => {
           setValue(event.target.value);
@@ -123,7 +120,7 @@ export function InlineSelectionComposer({ mode, top, left, members, onSubmit, on
       ) : null}
       <div className="selection-inline-composer-actions">
         <button type="button" onClick={onCancel}>取消</button>
-        <button type="button" className="primary" disabled={!value.trim()} onClick={submit}>{mode === 'comment' ? '评论' : '提交建议'}</button>
+        <button type="button" className="primary" disabled={!value.trim()} onClick={submit}>评论</button>
       </div>
     </div>
   );

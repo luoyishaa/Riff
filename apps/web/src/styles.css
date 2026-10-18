@@ -335,6 +335,10 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .markdown-selection-menu::before { content: ""; position: absolute; top: -5px; left: 18px; width: 8px; height: 8px; background: var(--paper); border-top: 1px solid var(--line); border-left: 1px solid var(--line); transform: rotate(45deg); }
 .markdown-selection-menu button { position: relative; min-height: 27px; padding: 3px 8px; color: var(--ink-soft); background: transparent; border: 0; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 650; }
 .markdown-selection-menu button:hover, .markdown-selection-menu button:focus-visible { color: var(--accent-dark); background: var(--accent-pale); outline: 0; }
+.cm-review-range { cursor: pointer; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2px; }
+.cm-review-thread, .markdown-review-thread { text-decoration-color: var(--accent); }
+.cm-review-suggestion, .markdown-review-suggestion { text-decoration-color: #7966a8; }
+.markdown-review-range { cursor: pointer; text-decoration-line: underline; text-decoration-style: dotted; text-decoration-thickness: 2px; text-underline-offset: 3px; }
 .source-selection-menu { position: absolute; z-index: 6; display: inline-flex; align-items: center; gap: 2px; padding: 3px; color: var(--ink-soft); background: var(--paper); border: 1px solid var(--line); border-radius: 5px; box-shadow: 0 8px 22px rgba(51, 37, 27, .14); white-space: nowrap; }
 .source-selection-menu button { min-height: 27px; padding: 3px 8px; color: var(--ink-soft); background: transparent; border: 0; border-radius: 3px; cursor: pointer; font-size: 10px; font-weight: 650; }
 .source-selection-menu button:hover, .source-selection-menu button:focus-visible { color: var(--accent-dark); background: var(--accent-pale); outline: 0; }
@@ -492,6 +496,16 @@ button:focus-visible, input:focus-visible, textarea:focus-visible, select:focus-
 .row-actions { display: flex; gap: 5px; margin-top: 10px; }
 .suggestion-row.accepted, .suggestion-row.rejected, .suggestion-row.stale { opacity: .8; }
 .suggestion-row.withdrawn { opacity: .65; }
+.thread-suggestion { margin: 10px 0 0 14px; padding: 9px 10px; background: #f8f4ee; border-left: 2px solid #7966a8; }
+.thread-suggestion.legacy { margin-left: 0; border: 1px solid var(--line); border-left: 2px solid #7966a8; }
+.thread-suggestion .diff { display: flex; flex-wrap: wrap; align-items: baseline; gap: 6px; margin: 9px 0 0; color: var(--ink-soft); font-size: 11px; line-height: 1.5; }
+.thread-suggestion del { padding: 2px 4px; color: var(--red); background: #f8e7e2; text-decoration-thickness: 1px; }
+.thread-suggestion ins { padding: 2px 4px; color: var(--green); background: #e6efe8; text-decoration: none; }
+.thread-suggestion.accepted, .thread-suggestion.rejected, .thread-suggestion.stale { opacity: .8; }
+.thread-suggestion.withdrawn { opacity: .65; }
+.legacy-suggestion-group { margin-top: 18px; }
+.legacy-suggestion-group .panel-list-heading { margin-top: 0; }
+.panel-help { margin: 0 0 8px; color: var(--muted); font-size: 10px; line-height: 1.5; }
 
 /* Agent configuration uses a quiet form and a clear permission hierarchy. */
 .agent-card { display: block; padding: 14px 0; border-top: 1px solid var(--line-soft); }
