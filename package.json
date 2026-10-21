@@ -1,0 +1,26 @@
+{
+  "name": "human-agent-docs",
+  "private": true,
+  "packageManager": "pnpm@11.25.0",
+  "engines": {
+    "node": ">=20"
+  },
+  "scripts": {
+    "check": "corepack pnpm typecheck && corepack pnpm lint && corepack pnpm test",
+    "typecheck": "tsc -b",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "eval:contexts": "tsc -b && node apps/server/dist/src/eval/cli.js contexts",
+    "eval:concurrency": "tsc -b && node apps/server/dist/src/eval/cli.js concurrency",
+    "dev": "corepack pnpm --filter @collab/server dev"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@typescript-eslint/eslint-plugin": "^8.18.0",
+    "@typescript-eslint/parser": "^8.18.0",
+    "eslint": "^9.17.0",
+    "prettier": "^3.4.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}

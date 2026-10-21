@@ -1,0 +1,29 @@
+{
+  "tasks": [
+    {
+      "id": "replace-unique",
+      "document": "项目简介\n\n协作编辑器让人和 agent 共同维护同一份文档。\n\n下一步是验证建议流程。",
+      "selection": { "start": 0, "end": 4 },
+      "messages": [{ "author": "Alice", "body": "把「项目简介」改成「项目概览」" }],
+      "maxChars": 500
+    },
+    {
+      "id": "review-only",
+      "document": "第一段说明背景。\n\n第二段列出实验结果。",
+      "selection": { "start": 0, "end": 6 },
+      "messages": [{ "author": "Bob", "body": "请检查这段文字的连贯性，不要直接改写。" }],
+      "maxChars": 300
+    },
+    {
+      "id": "retry-invalid-json",
+      "document": "The draft has one sentence that needs a clearer ending.",
+      "selection": { "start": 0, "end": 54 },
+      "messages": [{ "author": "Alice", "body": "Review the selected sentence." }],
+      "rawOutputs": [
+        "模型暂时没有返回 JSON",
+        "{\"reply\":\"已检查，没有需要提交的修改。\",\"edits\":[]}"
+      ],
+      "maxChars": 220
+    }
+  ]
+}

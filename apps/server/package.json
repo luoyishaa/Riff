@@ -1,0 +1,24 @@
+{
+  "name": "@collab/server",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "tsx src/main.ts",
+    "start": "node dist/src/main.js"
+  },
+  "dependencies": {
+    "@collab/agent": "workspace:*",
+    "@collab/kernel": "workspace:*",
+    "@collab/review": "workspace:*",
+    "@collab/protocol": "workspace:*",
+    "fastify": "^5.2.1",
+    "ws": "^8.18.0",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/ws": "^8.5.13",
+    "tsx": "^4.19.2",
+    "yjs": "^13.6.20"
+  }
+}

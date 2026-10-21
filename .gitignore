@@ -1,0 +1,19 @@
+node_modules/
+dist/
+*.tsbuildinfo
+coverage/
+.env
+*.db
+*.db-*
+*.log
+eval/results-*.csv
+eval/concurrency-*.json
+# Personal files kept next to the project
+paper-pal/
+*.docx
+毕设*.txt
+# Internal working notes, kept locally only
+docs/decisions.md
+docs/progress.md
+docs/ideas.md
+docs/stuck.md
