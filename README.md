@@ -6,9 +6,9 @@ Riff 是一个让人和 AI Agent 在同一份文档里共同写作、讨论和�
 
 从一句话的润色，到一整篇文档的审阅，讨论和修改都留在文字旁边。
 
-![Riff 工作台：左侧文件与大纲，中间文档，右侧团队成员与 Agent](docs/images/workspace.jpg)
+![Riff 中的论文审阅：Agent 提出学术改写，正文显示修改前后的差异](docs/images/rag-academic-review.jpg)
 
-*文档、团队成员和 Agent 在同一个工作台里。以下截图来自本地实际运行的 Riff，使用演示文档与内置 Mock Agent。*
+*将口语化摘要改为学术表达，保留原有数据，再由你审批。点击图片可查看高清原图。*
 
 ## 从一段文字开始
 
@@ -17,13 +17,19 @@ Riff 是一个让人和 AI Agent 在同一份文档里共同写作、讨论和�
 3. **对照，决定修改。** 在正文中查看修改前后的差异，接受合适的建议，拒绝不需要的改动。
 4. **继续，一起完善。** 伙伴可以接着回复、编辑和审阅，共同维护同一份文档。
 
-![选中文字后，直接在文字旁评论并提及 Polisher](docs/images/selection-comment.jpg)
+### 把密集参数整理成表格
 
-*选中文字，就地发起讨论，把具体修改要求交给 Agent。*
+选中实验参数段落，请 Agent 转成 Markdown 表格。接受建议后，直接在预览中查看三组方案，比较分块方式、检索参数与响应延迟。
 
-![Polisher 生成待审建议，正文显示修改差异，讨论中可以接受或拒绝](docs/images/agent-review.jpg)
+![接受 Agent 建议后，实验参数渲染为 Markdown 表格](docs/images/rag-table-preview.jpg)
 
-*Agent 的回复与修改建议留在讨论中；对照原文查看差异，再决定是否接受。*
+### 让修改考虑前文
+
+选中“方案 C 是所有场景下的最佳选择”，请 Agent 结合前文分析。它引用了三组延迟数据，补充准确性与响应速度的权衡，并指出现有证据不足以支持绝对结论。
+
+![Agent 结合前文的 120、310、890 毫秒延迟数据修正片面结论](docs/images/rag-context-review.jpg)
+
+*以上为真实 Codex CLI 调用与人工审批流程的实际截图，原图为 2370 × 1333。论文内容与数据是演示测试材料，不是 Riff 的研究成果。查看[三项用例验收记录](docs/validation/rag-cases.md)与[原始文档](docs/examples/rag-paper.md)。*
 
 ## 让协作围绕文档展开
 
