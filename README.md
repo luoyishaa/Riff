@@ -29,7 +29,7 @@ Riff 是一个让人和 AI Agent 在同一份文档里共同写作、讨论和�
 
 ![Agent 结合前文的 120、310、890 毫秒延迟数据修正片面结论](docs/images/rag-context-review.jpg)
 
-*以上为真实 Codex CLI 调用与人工审批流程的实际截图，原图为 2370 × 1333。论文内容与数据是演示测试材料，不是 Riff 的研究成果。查看[三项用例验收记录](docs/validation/rag-cases.md)与[原始文档](docs/examples/rag-paper.md)。*
+*使用演示论文，展示真实的 AI 修改与人工审批流程。*
 
 ## 让协作围绕文档展开
 
