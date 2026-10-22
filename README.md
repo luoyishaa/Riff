@@ -1,39 +1,98 @@
-# Riff — Make every draft better.
+# Riff
 
-Riff 是一个人与 Agent 共同编辑、评论和审阅纯文本文档的协作工作台。
+**与伙伴和 AI 一起，把每一稿写得更好。**
 
-这是按 `docs/SPEC.md` 构建的人机协同纯文本 demo。当前包含 Yjs 文档内核、角色权限、SQLite 持久化、WebSocket 协同同步、评论与建议审批、SSE 事件，以及默认 mock agent 的上下文、输出校验和待审建议闭环。
+Riff 是一个让人和 AI Agent 在同一份文档里共同写作、讨论和审阅的工作台。选中一段文字，留下意见，或 `@` 一位 Agent 帮忙修改；对照原文审阅建议，再决定哪些改动进入正文。
 
-## 启动
+从一句话的润色，到一整篇文档的审阅，讨论和修改都留在文字旁边。
+
+## 从一段文字开始
+
+1. **选中，提出想法。** 针对一句话发起评论，让伙伴或 Agent 知道你在讨论哪里。
+2. **讨论，形成建议。** 在评论里 `@Agent`，请它调整表达、检查内容，或协助统一术语。
+3. **对照，决定修改。** 在正文中查看修改前后的差异，接受合适的建议，拒绝不需要的改动。
+4. **继续，一起完善。** 伙伴可以接着回复、编辑和审阅，共同维护同一份文档。
+
+## 让协作围绕文档展开
+
+### 人和 Agent，都在团队里
+
+邀请伙伴加入项目，按分工设置查看、评论、提议修改或编辑的权限。Agent 也作为成员参与讨论，你可以为它选择模型，再把具体任务交给它。
+
+### 意见有位置，修改有对照
+
+评论关联到选中的文字，建议直接显示在正文里。默认由有审批权限的成员接受或拒绝；原文变化导致建议失效时，会标记为过期，Agent 的建议可以重新生成。
+
+### 小到一句，大到整篇
+
+既可以围绕选区讨论，也可以对整篇文档发起任务。一次任务产生多条建议时，可以逐条审阅，也可以批量处理剩余建议。
+
+### 和伙伴一起写
+
+多人可以同时编辑，看到彼此的光标和修改。Markdown 文档支持预览，也可以直接在预览中的文字上选区评论。
+
+### 接着使用你的本地文件
+
+把已有的 `.txt`、`.md` 文件夹连接到项目，在 Riff 中讨论和修改，并将编辑结果写回本地。文件同步状态可以在项目中查看；外部文件发生变化后，点击「同步」检查更新。
+
+## 试用 Riff
+
+Riff 目前是一个需要在本地启动的产品原型。准备好 Node.js 20 或以上版本与 Corepack，在项目目录安装依赖：
 
 ```powershell
 corepack pnpm install
+```
+
+在两个终端中分别启动服务：
+
+```powershell
+# 终端 1
 corepack pnpm --filter @collab/server dev
+```
+
+```powershell
+# 终端 2
 corepack pnpm --filter @collab/web dev
 ```
 
-默认服务端地址为 `http://127.0.0.1:8787`，前端地址为 `http://127.0.0.1:5173`。开发前端会把 `/api` 和 `/ws` 代理到 8787；换端口时同时设置 `$env:PORT` 与 `$env:COLLAB_SERVER_PORT`。当前服务端默认把 SQLite 文件写入 `apps/server/collab.db`，也可以通过 `$env:COLLAB_DB_PATH` 指定路径。
+打开 [Riff 工作台](http://127.0.0.1:5173)，注册账户后创建项目。想直接体验预置文档，可以在注册时使用 `alice` 作为账号 handle，认领演示账户。
 
-种子用户、演示项目和文档来自根目录的 `seed.config.json`。测试与检查：
+### 第一次与 Agent 协作
 
-```powershell
-corepack pnpm check
-corepack pnpm --filter @collab/web build
+默认的 Polisher 是一个无需模型密钥的演示 Agent，仅按固定规则响应，不能进行自由润色。选中文档中真实存在的一段文字，发表评论：
+
+```text
+@Polisher 把「原文」改成「新文」
 ```
 
-评测（SPEC §12，代码在 `apps/server/src/eval`）不依赖正在运行的服务：
+把示例中的「原文」换成选中的文字，再填写你想替换成的内容。建议出现后，点击接受，就能看到正文更新。
+
+要让 Agent 理解自然语言任务，由项目所有者打开顶部「模型」入口，连接模型服务或本机已登录的 Codex CLI、Claude Code，再到「成员与 Agent」中为 Agent 选择提供商和模型。API 密钥仅保留在当前服务进程中，重启后需要重新连接。
+
+## 了解更多
+
+- [演示指南](docs/demo.md)：体验邀请伙伴、选区评论、Agent 建议和批量审阅。
+- [本地文件指南](docs/local-project.md)：了解文件夹连接、写回方式与冲突处理限制。浏览器文件夹写回取决于浏览器支持；持续同步也可以使用服务端目录绑定。
+- [产品设计](PRODUCT.md)：了解 Riff 面向的用户和协作原则。
+- [需求与架构](docs/SPEC.md) · [接口文档](docs/api.md)：供想了解实现或参与开发的人阅读。
+
+<details>
+<summary>开发与验证</summary>
+
+默认服务端地址为 `http://127.0.0.1:8787`，前端为 `http://127.0.0.1:5173`。修改服务端端口时，同时设置 `PORT` 与前端代理使用的 `COLLAB_SERVER_PORT`。本地数据默认保存在 `apps/server/collab.db`，可通过 `COLLAB_DB_PATH` 更改位置。
 
 ```powershell
+# 类型检查、lint 与测试
+corepack pnpm check
+
+# 构建前端
+corepack pnpm --filter @collab/web build
+
+# 离线上下文与并发评测
 corepack pnpm eval:contexts eval/taskset.json --out eval/context-results.csv
 corepack pnpm eval:concurrency --clients 4 --steps 200 --seed 42 --out eval/concurrency-results.json
 ```
 
-`eval:contexts` 对每个任务分别构建 `selection`、`window`、`full` 上下文，运行确定性的 mock 输出协议校验，并输出 `strategy,task,validity,retries,latency,inputChars,suggestionCount` CSV。任务集可以是数组，也可以是包含 `tasks` 数组的 JSON 对象；可用 `rawOutputs` 为单个任务提供“第一次失败、第二次重试”的输入。`eval:concurrency` 使用可复现的种子模拟多个客户端的编辑、评论和建议，报告最终是否收敛、锚点 `exact` / `relocated` / `detached` 数量以及过期建议检出比例。`--steps` 表示事件数，不等待真实时间；同一 `--seed` 会生成同一事件序列。
+上下文评测使用确定性的模拟输出，用于检查上下文策略与输出校验，不代表真实模型的写作质量。并发评测使用固定随机种子模拟客户端操作。
 
-打开前端后先注册或登录账户。旧种子账户没有密码，第一次使用时可以在注册页用既有 handle（例如 `alice`）认领，它会保留原有项目成员关系。项目邀请按真实账号 handle 或 email 发送，被邀请者登录后在“待处理邀请”中接受。选中文字后点旁边的「评论」，写 `@Polisher 把「原文」改成「新文」`，默认 mock agent 会在讨论中回复，并把待审修改以行内差异显示在正文；editor/owner 可以在正文中直接 ✓ / ✕，或在讨论里接受、拒绝。更多接口和演示步骤见 [`docs/api.md`](docs/api.md) 与 [`docs/demo.md`](docs/demo.md)。
-
-项目 owner 可以从顶部“模型”入口管理统一的提供商目录：Codex CLI、Claude Code、OpenRouter、DeepSeek、OpenAI API 和自定义 OpenAI-compatible 接口都会显示连接状态。连接完成后，在成员面板的 Agent 配置中选择当前 Agent 使用的提供商和模型，并设置 `public` / `private` 交互权限。页面会检测本机 CLI 的安装和登录状态；CLI 连接沿用本机登录，API key 只保存在当前 server 进程，重启后需重新连接。DeepSeek 使用官方 `https://api.deepseek.com` 地址和 `deepseek-flash` 默认模型；OpenRouter 和自定义接口需要填写服务商提供的模型 ID。启动配置仍支持 `COLLAB_AGENT_CONFIG_JSON`，例如 `[ {"principalId":"polisher","adapter":{"type":"openai-compatible","baseUrl":"http://127.0.0.1:11434/v1","apiKeyEnv":"OLLAMA_API_KEY","model":"local"},"contextStrategy":"window"} ]`；Agent 的角色就是它在项目中的成员角色，在成员弹窗中修改。
-
-## 本地项目模式
-
-新建项目时，或在项目设置（侧栏的齿轮按钮）中，可以连接本地文件夹：填写服务端可访问的绝对目录，或在支持的浏览器中直接选择文件夹。服务端会递归扫描其中的 UTF-8 `.txt` 和 `.md` 文件，把相对路径映射为空间文档，并在协作编辑后用原子替换写回原文件。浏览器支持 File System Access API 时，文件夹选择器也能在当前页面写回原文件；不支持时会退化为一次性导入，需要填写服务端目录路径才能持续同步。完整接口、冲突状态和权限边界见 [`docs/local-project.md`](docs/local-project.md)。
+</details>
